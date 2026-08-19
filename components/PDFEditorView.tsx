@@ -84,11 +84,11 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     } else if (documentData?.pages) {
       setDetectedPages(documentData.pages);
     }
-  }, [documentData]);
+  }, [documentData?.id, documentData?.fileUrl]);
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const canvasMinHeightPx = pageCount * 1050;
-  const iframeHeightPx = pageCount * 950;
+  const iframeHeightPx = canvasMinHeightPx;
 
   // Placed interactive document fields on the A4 page
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
@@ -162,19 +162,20 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           : null;
 
       if (targetFields) {
-        setPlacedFields(targetFields);
+        const currentStr = JSON.stringify(placedFields);
+        const targetStr = JSON.stringify(targetFields);
+        if (currentStr !== targetStr) {
+          setPlacedFields(targetFields);
+        }
       }
     }
-  }, [documentData?.id, documentData?.filledFields, documentData?.placedFields]);
+  }, [documentData?.id]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && placedFields.length > 0) {
       localStorage.setItem("dochub_placed_fields", JSON.stringify(placedFields));
-      if (documentData) {
-        documentData.placedFields = placedFields;
-      }
     }
-  }, [placedFields, documentData]);
+  }, [placedFields]);
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>("f-1");
 
@@ -626,12 +627,43 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         )}
 
         {/* Main Canvas Area */}
-        <main className="flex-1 bg-slate-200/80 overflow-auto p-4 md:p-8 flex justify-center relative select-none">
-          {/* A4 Paper Container */}
+        <main className="flex-1 bg-slate-200/80 overflow-auto p-4 md:p-8 flex flex-col items-center gap-6 relative select-none">
+          {/* Header Document Metadata Outside Paper Container */}
+          <div className="w-[794px] max-w-full bg-white rounded-2xl border border-slate-300 p-4 md:p-5 shadow-sm flex justify-between items-center gap-4">
+            <div className="min-w-0 flex-1">
+              {isCompletedDoc ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>🔒 Completed & Legally Signed (Read-Only Locked)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-red-600 font-bold text-xs uppercase tracking-widest mb-1">
+                  <FileText className="w-4 h-4 flex-shrink-0" /> Uploaded Document Preview
+                </div>
+              )}
+              <h1 className="text-base md:text-lg font-bold text-slate-900 truncate max-w-xl" title={documentData?.name}>
+                {documentData?.name || "Uploaded Document"}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                <span>ID: DH-2026-{documentData?.id ? documentData.id.slice(-6) : "884920"}</span>
+                <span>•</span>
+                <span>{documentData?.size || "1.2 MB"}</span>
+                <span>•</span>
+                <span>{pageCount} page(s)</span>
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
+                <Check className="w-3.5 h-3.5 stroke-[3]" /> DocHub Verified
+              </div>
+            </div>
+          </div>
+
+          {/* A4 Paper Container - 1:1 Canvas Geometry */}
           <div
             ref={paperRef}
             onClick={() => setActiveFieldId(null)}
-            className="relative bg-white shadow-2xl rounded-sm p-8 md:p-12 transition-transform duration-200 text-slate-800 font-sans border border-slate-300"
+            className="relative bg-white shadow-2xl rounded-lg overflow-hidden transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
             style={{
               width: "794px",
               minHeight: `${canvasMinHeightPx}px`,
@@ -639,39 +671,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               transformOrigin: "top center",
             }}
           >
-            {/* Header Document Metadata */}
-            <div className="flex justify-between items-center border-b border-slate-200 pb-4 mb-6 gap-4">
-              <div className="min-w-0 flex-1">
-                {typeof window !== "undefined" && localStorage.getItem("dochub_completed_fields") ? (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>🔒 Completed & Legally Signed (Read-Only Locked)</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-red-600 font-bold text-xs uppercase tracking-widest mb-1">
-                    <FileText className="w-4 h-4 flex-shrink-0" /> Uploaded Document Preview
-                  </div>
-                )}
-                <h1 className="text-base md:text-lg font-bold text-slate-900 truncate max-w-xl" title={documentData?.name}>
-                  {documentData?.name || "Uploaded Document"}
-                </h1>
-                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                  <span>ID: DH-2026-{documentData?.id ? documentData.id.slice(-6) : "884920"}</span>
-                  <span>•</span>
-                  <span>{documentData?.size || "1.2 MB"}</span>
-                  <span>•</span>
-                  <span>{pageCount} page(s)</span>
-                </p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" /> DocHub Verified
-                </div>
-              </div>
-            </div>
 
             {/* Render Actual Uploaded File Content */}
-            <div className="relative flex flex-col justify-start" style={{ minHeight: `${iframeHeightPx}px` }}>
+            <div className="absolute inset-0 z-0 overflow-hidden">
               {(() => {
                 const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
                 const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
@@ -682,21 +684,19 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     <img
                       src={activeFileUrl}
                       alt={docTitle}
-                      style={{ maxHeight: `${iframeHeightPx}px` }}
-                      className="w-full h-auto object-contain rounded-lg border border-slate-200 shadow-inner"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <iframe
-                      src={`${activeFileUrl}#toolbar=0`}
-                      style={{ height: `${iframeHeightPx}px` }}
-                      className="w-full rounded-lg border border-slate-200 shadow-inner pointer-events-auto"
+                      src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                      className="w-full h-full border-0 pointer-events-auto"
                       title={docTitle}
                     />
                   );
                 }
                 return null;
               })() || (
-                <div style={{ height: `${iframeHeightPx}px` }} className="w-full bg-slate-50/60 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center">
+                <div className="w-full h-full bg-slate-50/60 p-8 flex flex-col items-center justify-center text-center">
                   <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl mb-4">
                     <FileText className="w-12 h-12" />
                   </div>
@@ -903,7 +903,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                       {field.type === "text" ? (
                         <input
                           type="text"
-                          readOnly={typeof window !== "undefined" && !!localStorage.getItem("dochub_completed_fields")}
+                          readOnly={isCompletedDoc}
                           value={field.value || ""}
                           onChange={(e) => handleUpdateFieldValue(field.id, e.target.value)}
                           onFocus={() => setActiveFieldId(field.id)}
@@ -922,7 +922,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         />
                       ) : field.type === "paragraph" ? (
                         <textarea
-                          readOnly={typeof window !== "undefined" && !!localStorage.getItem("dochub_completed_fields")}
+                          readOnly={isCompletedDoc}
                           value={field.value || ""}
                           onChange={(e) => handleUpdateFieldValue(field.id, e.target.value)}
                           onFocus={() => setActiveFieldId(field.id)}

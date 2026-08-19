@@ -151,7 +151,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const containerMinHeightPx = pageCount * 1050;
-  const iframeHeightPx = pageCount * 950;
+  const iframeHeightPx = containerMinHeightPx;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
     setFields((prev) =>
@@ -354,34 +354,31 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       </header>
 
       {/* Main Workspace Area (Clean PDF Display) */}
-      <div className="flex-1 p-4 md:p-8 flex justify-center overflow-y-auto bg-slate-200/80">
-        <div className="w-full max-w-4xl space-y-6">
+      <div className="flex-1 p-4 md:p-8 flex justify-center overflow-x-auto overflow-y-auto bg-slate-200/80">
+        <div className="w-full max-w-4xl flex justify-center space-y-6">
           {/* Document Paper Canvas */}
-          <div className="relative bg-slate-300 p-2 md:p-6 rounded-3xl shadow-2xl flex justify-center border border-slate-300">
+          <div className="relative bg-slate-300 p-2 md:p-6 rounded-3xl shadow-2xl flex justify-center border border-slate-300 overflow-x-auto">
             <div
-              className="relative bg-white text-slate-900 shadow-2xl border border-slate-300 rounded-lg overflow-hidden transition-all duration-200"
+              className="relative bg-white text-slate-900 shadow-2xl border border-slate-300 rounded-lg overflow-hidden transition-all duration-200 flex-shrink-0"
               style={{
-                width: "100%",
-                maxWidth: "794px",
+                width: "794px",
                 minHeight: `${containerMinHeightPx}px`,
               }}
             >
               {/* Embed actual uploaded document preview if fileUrl exists */}
               {activeFileUrl ? (
-                <div className="absolute inset-0 z-0">
+                <div className="absolute inset-0 z-0 overflow-hidden">
                   {activeFileType?.includes("image") ? (
                     <img
                       src={activeFileUrl}
                       alt={activeDocName}
-                      style={{ maxHeight: `${iframeHeightPx}px` }}
-                      className="w-full h-auto object-contain"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <iframe
-                      src={`${activeFileUrl}#toolbar=0`}
+                      src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
                       title={activeDocName}
-                      style={{ height: `${iframeHeightPx}px` }}
-                      className="w-full border-0 pointer-events-auto"
+                      className="w-full h-full border-0 pointer-events-auto"
                     />
                   )}
                 </div>
