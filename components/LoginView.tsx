@@ -23,12 +23,12 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("jane.doe@dochub.com");
-  const [password, setPassword] = useState("password123");
-  const [confirmPassword, setConfirmPassword] = useState("password123");
-  const [name, setName] = useState("Jane Doe");
-  const [company, setCompany] = useState("Acme Corporation");
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");

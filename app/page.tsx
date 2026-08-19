@@ -32,20 +32,11 @@ export default function Home() {
       if (savedUser && isLoggedOut !== "true") {
         try {
           setCurrentUserSession(JSON.parse(savedUser));
-        } catch {}
-      } else if (isLoggedOut !== "true") {
-        // Default initial session if first time visiting
-        const defaultSession: UserSession = {
-          id: "usr-1",
-          name: "Jane Doe",
-          email: "jane.doe@dochub.com",
-          avatarUrl:
-            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-          plan: "Pro Enterprise",
-          isLoggedIn: true,
-        };
-        setCurrentUserSession(defaultSession);
-        localStorage.setItem("dochub_current_user", JSON.stringify(defaultSession));
+        } catch {
+          setCurrentUserSession(null);
+        }
+      } else {
+        setCurrentUserSession(null);
       }
       setIsAuthLoaded(true);
     }
