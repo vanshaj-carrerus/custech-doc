@@ -377,12 +377,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       />
                     </div>
                   ) : (
-                    <div className="relative w-full z-0 bg-white overflow-hidden min-h-[600px]">
+                    <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
                       <iframe
                         src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
                         title={activeDocName}
-                        className="w-full min-h-[750px] border-0 pointer-events-auto block"
-                        style={{ width: "100%", height: "750px", border: 0, margin: 0, padding: 0 }}
+                        className="w-full border-0 pointer-events-none block"
+                        style={{ width: "100%", height: `${iframeHeightPx}px`, border: 0, margin: 0, padding: 0 }}
                       />
                     </div>
                   )

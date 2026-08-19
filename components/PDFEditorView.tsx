@@ -60,6 +60,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Paper canvas ref for position calculations
   const paperRef = useRef<HTMLDivElement>(null);
+  const canvasScrollRef = useRef<HTMLDivElement>(null);
 
   // Formatting state
   const [isBold, setIsBold] = useState(false);
@@ -85,6 +86,23 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       setDetectedPages(documentData.pages);
     }
   }, [documentData?.id, documentData?.fileUrl]);
+
+  // Route pinch-to-zoom / Ctrl+scroll on the canvas into the shared zoomLevel state,
+  // so the document and every placed field (name, date, signature) zoom together as one.
+  useEffect(() => {
+    const el = canvasScrollRef.current;
+    if (!el) return;
+
+    const handleWheelZoom = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const delta = Math.max(-15, Math.min(15, e.deltaY));
+      setZoomLevel((prev) => Math.max(60, Math.min(150, prev - delta)));
+    };
+
+    el.addEventListener("wheel", handleWheelZoom, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheelZoom);
+  }, []);
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const canvasMinHeightPx = pageCount * 1050;
@@ -571,10 +589,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       </div>
 
       {/* Main Workspace Area (Left Tool Sidebar + Main Canvas) */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 relative flex overflow-y-auto h-screen">
         {/* Left Tool Sidebar (Hidden when document is completed) */}
         {!isCompletedDoc && (
-          <aside className="w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 flex-shrink-0 select-none shadow-inner">
+          <aside className="sticky! top-0 z-20! h-screen self-start max-h-[calc(100vh-64px)] w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 flex-shrink-0 select-none shadow-inner">
             <div className="px-1 pt-1 flex items-center justify-between">
               <span className="text-[11px] font-extrabold tracking-wider text-slate-400 uppercase">
                 Document Blocks
@@ -584,7 +602,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
+            <div className="sticky! top-0! z-10! grid grid-cols-1 gap-2">
               {buildingBlocks.map((block) => {
                 const Icon = block.icon;
                 return (
@@ -632,7 +650,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         )}
 
         {/* Main Canvas Area */}
-        <main className="flex-1 bg-slate-200/80 overflow-auto p-4 md:p-8 flex flex-col items-center gap-6 relative select-none">
+        <main
+          ref={canvasScrollRef}
+          className="flex-1 bg-slate-200/80 p-4 md:p-8 flex flex-col items-center gap-6 relative select-none"
+        >
           {/* Header Document Metadata Outside Paper Container */}
           <div className="w-[794px] max-w-full bg-white rounded-2xl border border-slate-300 p-4 md:p-5 shadow-sm flex justify-between items-center gap-4">
             <div className="min-w-0 flex-1">
@@ -694,11 +715,11 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         />
                       </div>
                     ) : (
-                      <div className="relative w-full z-0 bg-white overflow-hidden min-h-[600px]">
+                      <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
                         <iframe
                           src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                          className="w-full min-h-[750px] border-0 pointer-events-auto block"
-                          style={{ width: "100%", height: "750px", border: 0, margin: 0, padding: 0 }}
+                          className="w-full border-0 pointer-events-none block"
+                          style={{ width: "100%", height: `${iframeHeightPx}px`, border: 0, margin: 0, padding: 0 }}
                           title={docTitle}
                         />
                       </div>
