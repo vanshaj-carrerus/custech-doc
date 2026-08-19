@@ -5,67 +5,100 @@ import { User } from "@/models/User";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, name, password } = body;
+    const { email, name, password, isSignUp } = body;
 
-    if (!email) {
+    if (!email || typeof email !== "string") {
       return NextResponse.json(
         { success: false, message: "Email address is required" },
         { status: 400 }
       );
     }
 
-    let userObj: any = null;
+    const cleanEmail = email.toLowerCase().trim();
 
+    // Ensure database connection
     try {
       await connectToDatabase();
-      let user = await User.findOne({ email: email.toLowerCase() });
-
-      if (!user) {
-        user = await User.create({
-          name: name || email.split("@")[0],
-          email: email.toLowerCase(),
-          password: password || "hashed_password",
-          plan: "Pro Enterprise",
-          avatarUrl:
-            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-        });
-      }
-      userObj = {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        plan: user.plan,
-        avatarUrl: user.avatarUrl,
-        isLoggedIn: true,
-      };
-    } catch (dbErr) {
-      console.warn("[MongoDB] Auth fallback:", dbErr);
-      userObj = {
-        id: `usr-${Date.now()}`,
-        name: name || email.split("@")[0],
-        email: email,
-        plan: "Pro Enterprise",
-        isLoggedIn: true,
-      };
+    } catch (dbError) {
+      console.error("[MongoDB Auth Error] Cannot connect to database:", dbError);
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Database connection failed. Please ensure MongoDB is running.",
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: "Authenticated successfully",
-      user: userObj,
-    });
-  } catch (error: any) {
-    console.error("Login route error:", error);
-    return NextResponse.json({
-      success: true,
-      message: "Authenticated successfully (fallback)",
-      user: {
-        id: `usr-${Date.now()}`,
-        name: "DocHub User",
-        email: "user@dochub.com",
+    // Query user record in MongoDB database
+    const existingUser = await User.findOne({ email: cleanEmail });
+
+    if (isSignUp) {
+      // User is attempting to SIGN UP
+      if (existingUser) {
+        return NextResponse.json(
+          {
+            success: false,
+            alreadyExists: true,
+            message: `Account already exists in database for "${cleanEmail}". Please Sign In instead!`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Create new user record in MongoDB database
+      const newUser = await User.create({
+        name: name?.trim() || cleanEmail.split("@")[0],
+        email: cleanEmail,
+        password: password || "hashed_password",
         plan: "Pro Enterprise",
-        isLoggedIn: true,
-      },
-    });
+        avatarUrl:
+          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "Account registered successfully in database",
+        user: {
+          id: newUser._id.toString(),
+          name: newUser.name,
+          email: newUser.email,
+          plan: newUser.plan,
+          avatarUrl: newUser.avatarUrl,
+          isLoggedIn: true,
+        },
+      });
+    } else {
+      // User is attempting to SIGN IN
+      if (!existingUser) {
+        return NextResponse.json(
+          {
+            success: false,
+            notSignedUp: true,
+            message: `No account found in database for "${cleanEmail}". You must Sign Up first!`,
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Signed in successfully from database record",
+        user: {
+          id: existingUser._id.toString(),
+          name: existingUser.name,
+          email: existingUser.email,
+          plan: existingUser.plan,
+          avatarUrl: existingUser.avatarUrl,
+          isLoggedIn: true,
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error("[Auth API Error]:", error);
+    return NextResponse.json(
+      { success: false, message: error.message || "Authentication server error" },
+      { status: 500 }
+    );
   }
 }

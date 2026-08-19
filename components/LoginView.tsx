@@ -23,7 +23,21 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const [authMode, setAuthMode] = useState<"signin" | "signup">(() => {
+    if (typeof window !== "undefined") {
+      const hasSignedUp = localStorage.getItem("dochub_has_signed_up") === "true";
+      const registeredList = localStorage.getItem("dochub_registered_emails");
+      let hasEmails = false;
+      if (registeredList) {
+        try {
+          const parsed = JSON.parse(registeredList);
+          if (Array.isArray(parsed) && parsed.length > 0) hasEmails = true;
+        } catch {}
+      }
+      return hasSignedUp || hasEmails ? "signin" : "signup";
+    }
+    return "signup";
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -33,14 +47,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const getRegisteredEmails = (): string[] => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("dochub_registered_emails");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  };
+
+  const addRegisteredEmail = (registeredEmail: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      const list = getRegisteredEmails();
+      const clean = registeredEmail.toLowerCase().trim();
+      if (!list.includes(clean)) {
+        list.push(clean);
+        localStorage.setItem("dochub_registered_emails", JSON.stringify(list));
+      }
+      localStorage.setItem("dochub_has_signed_up", "true");
+    } catch {}
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setErrorMessage("");
 
-    if (authMode === "signup" && password !== confirmPassword) {
-      setErrorMessage("Passwords do not match! Please check your password entry.");
-      return;
+    const cleanEmail = email.toLowerCase().trim();
+
+    if (authMode === "signup") {
+      if (!name.trim()) {
+        setErrorMessage("Please enter your full name to sign up!");
+        return;
+      }
+      if (password && confirmPassword && password !== confirmPassword) {
+        setErrorMessage("Passwords do not match! Please check your password entry.");
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -49,83 +93,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, password, company, isSignUp: authMode === "signup" }),
+        body: JSON.stringify({
+          email: cleanEmail,
+          name,
+          password,
+          company,
+          isSignUp: authMode === "signup",
+        }),
       });
-      const data = await res.json();
 
+      const data = await res.json();
       setIsLoading(false);
 
-      if (data.success && data.user) {
+      if (!data.success) {
+        setErrorMessage(data.message || "Authentication failed");
+        if (data.notSignedUp) {
+          setTimeout(() => setAuthMode("signup"), 1600);
+        } else if (data.alreadyExists) {
+          setTimeout(() => setAuthMode("signin"), 1600);
+        }
+        return;
+      }
+
+      // Record in registered emails list
+      addRegisteredEmail(cleanEmail);
+
+      if (data.user) {
         onLoginSuccess({
           id: data.user.id,
-          name: data.user.name || name,
-          email: data.user.email,
+          name: data.user.name || name || cleanEmail.split("@")[0],
+          email: data.user.email || cleanEmail,
           avatarUrl: data.user.avatarUrl,
           plan: data.user.plan || "Pro Enterprise",
           isLoggedIn: true,
         });
-      } else {
-        // Fallback login / signup
-        onLoginSuccess({
-          id: `usr-${Date.now()}`,
-          name: name || email.split("@")[0],
-          email: email,
-          plan: "Pro Enterprise",
-          isLoggedIn: true,
-        });
       }
-    } catch {
+    } catch (err: any) {
       setIsLoading(false);
-      onLoginSuccess({
-        id: `usr-${Date.now()}`,
-        name: name || email.split("@")[0],
-        email: email,
-        plan: "Pro Enterprise",
-        isLoggedIn: true,
-      });
-    }
-  };
-
-  const handleQuickDemoLogin = async (demoName: string, demoEmail: string) => {
-    setName(demoName);
-    setEmail(demoEmail);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: demoEmail, name: demoName, password: "demo" }),
-      });
-      const data = await res.json();
-      setIsLoading(false);
-
-      if (data.success && data.user) {
-        onLoginSuccess({
-          id: data.user.id,
-          name: data.user.name,
-          email: data.user.email,
-          plan: "Pro Enterprise",
-          isLoggedIn: true,
-        });
-      } else {
-        onLoginSuccess({
-          id: `usr-${Date.now()}`,
-          name: demoName,
-          email: demoEmail,
-          plan: "Pro Enterprise",
-          isLoggedIn: true,
-        });
-      }
-    } catch {
-      setIsLoading(false);
-      onLoginSuccess({
-        id: `usr-${Date.now()}`,
-        name: demoName,
-        email: demoEmail,
-        plan: "Pro Enterprise",
-        isLoggedIn: true,
-      });
+      setErrorMessage("Authentication server error. Please try again.");
     }
   };
 
@@ -240,36 +245,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* Quick Demo Accounts Switcher (Only in Sign In mode) */}
-            {authMode === "signin" && (
-              <div className="mb-6 p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">
-                  1-Click Quick Demo Login:
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleQuickDemoLogin("Jane Doe (HR Manager)", "jane.doe@dochub.com")
-                    }
-                    className="px-3 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-bold text-slate-700 hover:text-blue-600 transition shadow-2xs flex items-center gap-1.5"
-                  >
-                    <User className="w-3.5 h-3.5 text-blue-500" />
-                    Jane Doe (HR)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleQuickDemoLogin("Alex Mercer (CEO)", "alex.mercer@acmetech.com")
-                    }
-                    className="px-3 py-1.5 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-xs font-bold text-slate-700 hover:text-blue-600 transition shadow-2xs flex items-center gap-1.5"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-amber-500" />
-                    Alex Mercer (CEO)
-                  </button>
-                </div>
-              </div>
-            )}
+
 
             {/* Auth Form */}
             <form onSubmit={handleLoginSubmit} className="space-y-4">
