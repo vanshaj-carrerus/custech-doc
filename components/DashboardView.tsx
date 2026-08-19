@@ -233,6 +233,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           name: doc.title,
                           size: doc.size,
                           pages: doc.pages,
+                          status: doc.status as any,
+                          fileUrl: doc.fileUrl,
+                          fileType: doc.fileType,
+                          placedFields: doc.placedFields,
+                          filledFields: doc.filledFields,
                         });
                       }
                       setActiveView("editor");

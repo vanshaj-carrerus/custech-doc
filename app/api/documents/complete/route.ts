@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (docId && docId.length === 24) {
       docRecord = await DocumentRecord.findByIdAndUpdate(
         docId,
-        { status: "Completed", filledFields: filledFields || [] },
+        { status: "Completed", filledFields: filledFields || [], placedFields: filledFields || [] },
         { new: true }
       );
     }

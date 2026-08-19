@@ -162,6 +162,10 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
                         size: doc.size,
                         pages: doc.pages,
                         status: "Completed",
+                        fileUrl: doc.fileUrl,
+                        fileType: doc.fileType,
+                        placedFields: doc.placedFields,
+                        filledFields: doc.filledFields,
                       });
                     }
                     setActiveView("editor");
@@ -205,6 +209,10 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
                             size: doc.size,
                             pages: doc.pages,
                             status: "Completed",
+                            fileUrl: doc.fileUrl,
+                            fileType: doc.fileType,
+                            placedFields: doc.placedFields,
+                            filledFields: doc.filledFields,
                           });
                         }
                         setActiveView("editor");

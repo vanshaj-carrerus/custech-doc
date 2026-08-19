@@ -153,16 +153,28 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   });
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("dochub_placed_fields", JSON.stringify(placedFields));
+    if (documentData) {
+      const targetFields =
+        documentData.filledFields && documentData.filledFields.length > 0
+          ? documentData.filledFields
+          : documentData.placedFields && documentData.placedFields.length > 0
+          ? documentData.placedFields
+          : null;
+
+      if (targetFields) {
+        setPlacedFields(targetFields);
+      }
     }
-  }, [placedFields]);
+  }, [documentData?.id, documentData?.filledFields, documentData?.placedFields]);
 
   useEffect(() => {
-    if (documentData?.placedFields && documentData.placedFields.length > 0) {
-      setPlacedFields(documentData.placedFields);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("dochub_placed_fields", JSON.stringify(placedFields));
+      if (documentData) {
+        documentData.placedFields = placedFields;
+      }
     }
-  }, [documentData?.id]);
+  }, [placedFields, documentData]);
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>("f-1");
 

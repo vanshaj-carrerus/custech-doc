@@ -34,6 +34,10 @@ export interface RecentDoc {
   pages: number;
   status: 'Completed' | 'Pending' | 'Pending Sign' | 'Draft';
   size: string;
+  fileUrl?: string;
+  fileType?: string;
+  placedFields?: DocumentField[];
+  filledFields?: DocumentField[];
 }
 
 export interface ActiveDocument {
@@ -44,6 +48,7 @@ export interface ActiveDocument {
   fileUrl?: string;
   fileType?: string;
   placedFields?: DocumentField[];
+  filledFields?: DocumentField[];
   status?: string;
 }
 
