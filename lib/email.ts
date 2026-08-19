@@ -2,7 +2,8 @@ import nodemailer from "nodemailer";
 
 const EMAIL_USER = process.env.EMAIL_USER || process.env.SMTP_USER || "baldaniyaneev81@gmail.com";
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASS || "";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
+const APP_URL = rawAppUrl.replace(/\/$/, "");
 
 // Direct Nodemailer Gmail Service Transporter
 export function getTransporter() {
@@ -36,6 +37,7 @@ interface SendCandidateEmailParams {
   docId: string;
   subject?: string;
   message?: string;
+  baseUrl?: string;
 }
 
 // 1. Send E-Signature Link Email to Candidate via Nodemailer Gmail
@@ -47,8 +49,10 @@ export async function sendCandidateAgreementEmail({
   docId,
   subject,
   message,
+  baseUrl,
 }: SendCandidateEmailParams) {
-  const signingUrl = `${APP_URL}/sign/${docId}?candidate=${encodeURIComponent(recipientEmail)}`;
+  const domainBase = (baseUrl || APP_URL).replace(/\/$/, "");
+  const signingUrl = `${domainBase}/sign/${docId}?candidate=${encodeURIComponent(recipientEmail)}`;
   const mailSubject = subject || `Signature Requested: ${docName}`;
 
   const htmlContent = `

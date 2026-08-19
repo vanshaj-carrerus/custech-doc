@@ -1,17 +1,15 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { ActiveView, UserSession } from "@/types/dochub";
 import {
   FileText,
-  Zap,
-  LayoutDashboard,
-  Upload,
-  FileEdit,
   Menu,
   ChevronDown,
   LogOut,
-  UserCheck,
+  User,
+  Plus,
+  CheckCircle2,
 } from "lucide-react";
 
 interface NavbarProps {
@@ -26,19 +24,19 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   activeView,
   setActiveView,
-  onOpenWalkthrough,
   onToggleSidebar,
   userSession,
   onLogout,
 }) => {
-  const [showProfileMenu, setShowProfileMenu] = React.useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 md:px-6 shadow-xs">
-      {/* Left section: Hamburger (mobile) + DocHub Logo */}
+    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-4 md:px-6 select-none">
+      {/* Left section: Hamburger (mobile) + Brand Logo */}
       <div className="flex items-center gap-3">
         <button
           onClick={onToggleSidebar}
-          className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg md:hidden transition"
+          className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl md:hidden transition"
           aria-label="Toggle Navigation"
         >
           <Menu className="w-5 h-5" />
@@ -46,99 +44,72 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <div
           onClick={() => setActiveView("dashboard")}
-          className="flex items-center gap-2.5 cursor-pointer group select-none"
+          className="flex items-center gap-2.5 cursor-pointer group"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-bold shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <FileText className="w-5 h-5" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500 text-white font-bold shadow-md shadow-sky-500/20 group-hover:bg-sky-600 transition-colors">
+            <FileText className="w-5 h-5 stroke-[2.2]" />
           </div>
-          <div className="flex flex-col">
-            <span className="text-xl font-bold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors">
-              DocHub
-            </span>
-          </div>
-        </div>
-
-        {/* View mode indicator / switcher pills */}
-        <div className="hidden lg:flex items-center ml-8 bg-slate-100 p-1 rounded-xl border border-slate-200">
-          <button
-            onClick={() => setActiveView("dashboard")}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-              activeView === "dashboard"
-                ? "bg-white text-blue-600 shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            Dashboard
-          </button>
-          <button
-            onClick={() => setActiveView("import")}
-            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-              activeView === "import"
-                ? "bg-white text-blue-600 shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <Upload className="w-3.5 h-3.5" />
-            File Import
-          </button>
+          <span className="text-lg font-black tracking-tight text-slate-900 group-hover:text-sky-600 transition-colors">
+            DocHub
+          </span>
         </div>
       </div>
 
-      {/* Right section: Avatar */}
-      <div className="flex items-center gap-2 md:gap-3">
+      {/* Right section: Primary Action + User Profile Dropdown */}
+      <div className="flex items-center gap-3">
+        {/* Quick Action Button */}
+        <button
+          onClick={() => setActiveView("import")}
+          className="hidden sm:flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition transform hover:-translate-y-0.5"
+        >
+          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <span>Import Document</span>
+        </button>
 
-        {/* Divider */}
-        <div className="h-5 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
+        <div className="h-4 w-[1px] bg-slate-200 hidden sm:block"></div>
 
         {/* User profile avatar with Dropdown */}
         <div className="relative">
-          <div
+          <button
             onClick={() => setShowProfileMenu(!showProfileMenu)}
-            className="flex items-center gap-2 pl-1 cursor-pointer hover:opacity-95 transition"
+            className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-slate-100/80 transition text-left"
           >
-            <div className="relative">
-              <div className="h-8 w-8 md:h-9 md:w-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shadow-xs ring-2 ring-blue-500/20">
-                {userSession?.name ? userSession.name.slice(0, 2).toUpperCase() : "JD"}
-              </div>
-              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+            <div className="h-8 w-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs shadow-sm ring-2 ring-sky-500/20">
+              {userSession?.name ? userSession.name.slice(0, 2).toUpperCase() : "U"}
             </div>
-            <div className="hidden xl:flex flex-col text-left">
-              <span className="text-xs font-bold text-slate-800 leading-tight">
-                {userSession?.name || "Jane Doe"}
+            <div className="hidden sm:flex flex-col">
+              <span className="text-xs font-semibold text-slate-900 leading-tight">
+                {userSession?.name || "User"}
               </span>
-              <span className="text-[11px] text-slate-500 leading-tight truncate max-w-[120px]">
-                {userSession?.email || "jane.doe@dochub.com"}
+              <span className="text-[11px] text-slate-400 leading-tight truncate max-w-[140px]">
+                {userSession?.email || "user@email.com"}
               </span>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden xl:block" />
-          </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+          </button>
 
           {/* Profile Dropdown Menu */}
           {showProfileMenu && (
-            <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 text-xs text-left animate-in fade-in">
-              <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/70">
-                <p className="font-bold text-slate-900 flex items-center gap-1">
-                  {userSession?.name || "Jane Doe"}
-                  <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+            <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden p-1 text-xs text-left animate-in fade-in">
+              <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/70 rounded-xl mb-1">
+                <p className="font-bold text-slate-900 truncate">
+                  {userSession?.name || "User Account"}
                 </p>
                 <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                  {userSession?.email || "jane.doe@dochub.com"}
+                  {userSession?.email || "user@email.com"}
                 </p>
               </div>
 
-              <div className="p-1">
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    if (onLogout) onLogout();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-xl font-bold transition"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out to Login Screen</span>
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  if (onLogout) onLogout();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-xl font-semibold transition"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
+              </button>
             </div>
           )}
         </div>

@@ -16,6 +16,8 @@ export async function POST(request: Request) {
       subject,
       message,
       placedFields,
+      fileUrl,
+      fileType,
     } = body;
 
     if (!senderEmail || !recipientEmail) {
@@ -34,6 +36,8 @@ export async function POST(request: Request) {
         name: name || "Document.pdf",
         size: size || "1.2 MB",
         pages: pages || 1,
+        fileUrl: fileUrl,
+        fileType: fileType,
         senderEmail: senderEmail.toLowerCase(),
         recipientEmail: recipientEmail.toLowerCase(),
         recipientName: recipientName || recipientEmail,
@@ -51,6 +55,14 @@ export async function POST(request: Request) {
     const finalSender = docRecord?.senderEmail || senderEmail.toLowerCase();
     const finalRecipient = docRecord?.recipientEmail || recipientEmail.toLowerCase();
 
+    const originHeader = request.headers.get("origin");
+    const hostHeader = request.headers.get("host");
+    const requestBaseUrl = originHeader
+      ? originHeader
+      : hostHeader
+      ? `${hostHeader.includes("localhost") ? "http" : "https"}://${hostHeader}`
+      : process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
+
     // 2. Send Email via Nodemailer (or generate active signing link)
     const emailResult = await sendCandidateAgreementEmail({
       senderEmail: finalSender,
@@ -60,6 +72,7 @@ export async function POST(request: Request) {
       docId: docId,
       subject: subject || `Signature Requested: ${finalDocName}`,
       message: message || "",
+      baseUrl: requestBaseUrl,
     });
 
     return NextResponse.json({
@@ -79,10 +92,12 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("Send Document error:", error);
     // Never crash with 500, always return fallback candidate signing response
+    const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
+    const appBaseUrl = rawAppUrl.replace(/\/$/, "");
     return NextResponse.json({
       success: true,
       message: "Document created (fallback mode)",
-      signingUrl: `${process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.com"}/sign/dh-${Date.now().toString().slice(-6)}`,
+      signingUrl: `${appBaseUrl}/sign/dh-${Date.now().toString().slice(-6)}`,
       document: {
         id: `dh-${Date.now().toString().slice(-6)}`,
         name: "Agreement.pdf",

@@ -4,18 +4,10 @@ import React, { useState } from "react";
 import { UserSession } from "@/types/dochub";
 import {
   FileText,
-  Lock,
-  Mail,
+  Loader2,
+  AlertTriangle,
   ArrowRight,
   ShieldCheck,
-  CheckCircle2,
-  Loader2,
-  Sparkles,
-  Zap,
-  User,
-  Building,
-  UserPlus,
-  KeyRound,
 } from "lucide-react";
 
 interface LoginViewProps {
@@ -38,6 +30,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
     return "signup";
   });
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -78,11 +71,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     if (authMode === "signup") {
       if (!name.trim()) {
-        setErrorMessage("Please enter your full name to sign up!");
+        setErrorMessage("Please enter your full name");
         return;
       }
       if (password && confirmPassword && password !== confirmPassword) {
-        setErrorMessage("Passwords do not match! Please check your password entry.");
+        setErrorMessage("Passwords do not match");
         return;
       }
     }
@@ -108,14 +101,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       if (!data.success) {
         setErrorMessage(data.message || "Authentication failed");
         if (data.notSignedUp) {
-          setTimeout(() => setAuthMode("signup"), 1600);
+          setTimeout(() => setAuthMode("signup"), 1500);
         } else if (data.alreadyExists) {
-          setTimeout(() => setAuthMode("signin"), 1600);
+          setTimeout(() => setAuthMode("signin"), 1500);
         }
         return;
       }
 
-      // Record in registered emails list
       addRegisteredEmail(cleanEmail);
 
       if (data.user) {
@@ -128,309 +120,259 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           isLoggedIn: true,
         });
       }
-    } catch (err: any) {
+    } catch {
       setIsLoading(false);
-      setErrorMessage("Authentication server error. Please try again.");
+      setErrorMessage("Unable to connect to server. Please try again.");
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 md:p-8 relative overflow-hidden font-sans">
-      {/* Background Glow Accents */}
-      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-600/30 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-slate-50 to-blue-50 flex flex-col items-center justify-center p-4 md:p-6 font-sans text-slate-900 antialiased selection:bg-sky-500 selection:text-white relative">
+      {/* Background Subtle Sky Accent Circles */}
+      <div className="absolute top-12 left-12 w-72 h-72 bg-sky-200/40 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-12 right-12 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 relative z-10 border border-slate-800/50">
-        {/* Left Side: Brand Hero Banner */}
-        <div className="lg:col-span-5 bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-800 p-8 md:p-10 text-white flex flex-col justify-between relative overflow-hidden">
-          <div className="relative z-10">
-            {/* Logo */}
-            <div className="flex items-center gap-3 mb-8">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-blue-600 font-extrabold shadow-md">
-                <FileText className="w-6 h-6" />
-              </div>
-              <span className="text-2xl font-black tracking-tight text-white">
-                DocHub
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-blue-200 text-xs font-bold border border-white/10">
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Enterprise Workspace
-              </div>
-              <h1 className="text-2xl md:text-3xl font-extrabold leading-tight tracking-tight">
-                {authMode === "signin"
-                  ? "Secure Document Management & E-Sign Portal"
-                  : "Create Your Enterprise E-Sign Account"}
-              </h1>
-              <p className="text-xs md:text-sm text-blue-100/90 leading-relaxed">
-                {authMode === "signin"
-                  ? "Sign in to your DocHub workspace to manage agreements, edit PDFs, and send sign requests."
-                  : "Sign up today to start uploading PDFs, creating e-signature fields, and tracking candidate approvals."}
-              </p>
-            </div>
+      <div className="w-full max-w-md relative z-10">
+        {/* Brand Header */}
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="h-12 w-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/25 mb-3 border border-sky-400/40">
+            <FileText className="w-6 h-6 stroke-[2.2]" />
           </div>
-
-          {/* Key Feature Badges */}
-          <div className="relative z-10 space-y-3 pt-8 border-t border-white/15">
-            <div className="flex items-center gap-2.5 text-xs text-blue-100 font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Bank-Grade 256-bit SSL Encryption</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-xs text-blue-100 font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Real-Time Candidate E-Sign Tracking</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-xs text-blue-100 font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Instant PDF Document Processing</span>
-            </div>
-          </div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">
+            DocHub
+          </h1>
+          <p className="text-xs font-medium text-slate-500 mt-0.5">
+            Enterprise PDF Management & E-Signatures
+          </p>
         </div>
 
-        {/* Right Side: Sign In / Sign Up Form */}
-        <div className="lg:col-span-7 bg-white p-8 md:p-12 flex flex-col justify-between text-left">
-          <div>
-            {/* Top Switcher Tabs */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 mb-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("signin");
-                  setErrorMessage("");
-                }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 ${
-                  authMode === "signin"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>Sign In 🔑</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("signup");
-                  setErrorMessage("");
-                }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 ${
-                  authMode === "signup"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Sign Up / Create Account 🚀</span>
-              </button>
-            </div>
+        {/* Minimal Sky Auth Card */}
+        <div className="bg-white/90 backdrop-blur-xl border border-sky-100 rounded-3xl p-6 md:p-8 shadow-xl shadow-sky-900/5 space-y-6">
+          {/* Segmented Control Switcher */}
+          <div className="grid grid-cols-2 bg-slate-100/90 p-1 rounded-2xl border border-slate-200/70 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("signin");
+                setErrorMessage("");
+              }}
+              className={`py-2 rounded-xl transition-all ${
+                authMode === "signin"
+                  ? "bg-white text-sky-600 shadow-sm font-bold border border-sky-100"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("signup");
+                setErrorMessage("");
+              }}
+              className={`py-2 rounded-xl transition-all ${
+                authMode === "signup"
+                  ? "bg-white text-sky-600 shadow-sm font-bold border border-sky-100"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
 
-            <div className="flex items-center justify-between mb-4">
+          {/* Section Heading */}
+          <div className="text-left">
+            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+              {authMode === "signin" ? "Sign in to your account" : "Create a new account"}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {authMode === "signin"
+                ? "Enter your email and password to access your dashboard"
+                : "Register with your details to start managing documents"}
+            </p>
+          </div>
+
+          {/* Alert Message Banner */}
+          {errorMessage && (
+            <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-900 text-xs font-medium flex items-start gap-2.5 leading-relaxed text-left animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Form Inputs */}
+          <form onSubmit={handleLoginSubmit} className="space-y-4 text-left">
+            {/* Full Name Input (Sign Up) */}
+            {authMode === "signup" && (
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                  {authMode === "signin" ? "Dashboard Sign In" : "Register New Account"}
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  {authMode === "signin"
-                    ? "Enter your email & password to access your dashboard"
-                    : "Fill in your details to create a free DocHub account"}
-                </p>
-              </div>
-            </div>
-
-            {/* Error banner if any */}
-            {errorMessage && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center gap-2">
-                <span>⚠️ {errorMessage}</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Full Name <span className="text-sky-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+                />
               </div>
             )}
 
-
-
-            {/* Auth Form */}
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {/* Full Name Input */}
+            {/* Company Input (Sign Up) */}
+            {authMode === "signup" && (
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Full Name {authMode === "signup" && <span className="text-red-500">*</span>}
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Company / Organization <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required={authMode === "signup"}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Jane Doe"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  placeholder="Acme Inc."
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+                />
               </div>
+            )}
 
-              {/* Company Input (Only on Sign Up) */}
-              {authMode === "signup" && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Company / Organization Name
-                  </label>
-                  <div className="relative">
-                    <Building className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={company}
-                      onChange={(e) => setCompany(e.target.value)}
-                      placeholder="Acme Inc."
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Email Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Email Address <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@company.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-                  />
-                </div>
-              </div>
-
-              {/* Password Input */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-slate-700">
-                    Password <span className="text-red-500">*</span>
-                  </label>
-                  {authMode === "signin" && (
-                    <a
-                      href="#forgot"
-                      onClick={(e) => e.preventDefault()}
-                      className="text-[11px] font-semibold text-blue-600 hover:underline"
-                    >
-                      Forgot Password?
-                    </a>
-                  )}
-                </div>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-                  />
-                </div>
-              </div>
-
-              {/* Confirm Password (Only on Sign Up) */}
-              {authMode === "signup" && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Confirm Password <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Remember Me / Terms Checkbox */}
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <span className="text-xs text-slate-600 font-medium">
-                    {authMode === "signin"
-                      ? "Keep me signed in on this device"
-                      : "I agree to Terms of Service & Privacy Policy"}
-                  </span>
-                </label>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isLoading || !email}
-                className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-3 px-6 rounded-xl shadow-md shadow-blue-600/30 transition-all flex items-center justify-center gap-2 transform hover:-translate-y-0.5 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>{authMode === "signin" ? "Signing In..." : "Creating Account..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      {authMode === "signin" ? "Sign In to Dashboard" : "Create Account & Start"}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
-
-            {/* Toggle Mode Link */}
-            <div className="mt-4 text-center">
-              {authMode === "signin" ? (
-                <p className="text-xs text-slate-500">
-                  Don't have an account yet?{" "}
-                  <button
-                    onClick={() => {
-                      setAuthMode("signup");
-                      setErrorMessage("");
-                    }}
-                    className="font-bold text-blue-600 hover:underline"
-                  >
-                    Sign Up Free
-                  </button>
-                </p>
-              ) : (
-                <p className="text-xs text-slate-500">
-                  Already have an account?{" "}
-                  <button
-                    onClick={() => {
-                      setAuthMode("signin");
-                      setErrorMessage("");
-                    }}
-                    className="font-bold text-blue-600 hover:underline"
-                  >
-                    Sign In Here
-                  </button>
-                </p>
-              )}
+            {/* Email Input */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Email Address <span className="text-sky-500">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+              />
             </div>
-          </div>
 
-          {/* Footer security note */}
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span className="flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              Protected by DocHub Auth v2.4
-            </span>
-            <span>Terms & Privacy</span>
+            {/* Password Input */}
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Password <span className="text-sky-500">*</span>
+                </label>
+                {authMode === "signin" && (
+                  <button
+                    type="button"
+                    onClick={(e) => e.preventDefault()}
+                    className="text-[11px] font-medium text-sky-600 hover:text-sky-700 transition"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+              />
+            </div>
+
+            {/* Confirm Password (Sign Up) */}
+            {authMode === "signup" && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Confirm Password <span className="text-sky-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+                />
+              </div>
+            )}
+
+            {/* Checkbox Options */}
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 hover:text-slate-900">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                <span>
+                  {authMode === "signin"
+                    ? "Remember this device"
+                    : "I agree to Terms of Service and Privacy Policy"}
+                </span>
+              </label>
+            </div>
+
+            {/* Primary Action Button */}
+            <button
+              type="submit"
+              disabled={isLoading || !email}
+              className="w-full mt-2 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold text-xs md:text-sm py-2.5 px-4 rounded-xl shadow-md shadow-sky-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <span>{authMode === "signin" ? "Sign in" : "Create account"}</span>
+                  <ArrowRight className="w-4 h-4 stroke-[2.2]" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Toggle View Mode Link */}
+          <div className="pt-2 text-center text-xs text-slate-500">
+            {authMode === "signin" ? (
+              <span>
+                Don't have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("signup");
+                    setErrorMessage("");
+                  }}
+                  className="text-sky-600 hover:text-sky-700 font-semibold transition"
+                >
+                  Sign up
+                </button>
+              </span>
+            ) : (
+              <span>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("signin");
+                    setErrorMessage("");
+                  }}
+                  className="text-sky-600 hover:text-sky-700 font-semibold transition"
+                >
+                  Sign in
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Footer Subtext */}
+        <div className="mt-6 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> 256-bit Encrypted
+          </span>
+          <div className="flex gap-3">
+            <a href="#terms" onClick={(e) => e.preventDefault()} className="hover:text-slate-600 transition">Terms</a>
+            <span>•</span>
+            <a href="#privacy" onClick={(e) => e.preventDefault()} className="hover:text-slate-600 transition">Privacy</a>
           </div>
         </div>
       </div>

@@ -50,6 +50,9 @@ export async function GET(request: Request) {
         pages: d.pages || 1,
         status: d.status || "Completed",
         size: d.size || "1.2 MB",
+        fileUrl: d.fileUrl,
+        fileType: d.fileType,
+        placedFields: d.placedFields,
       })),
     });
   } catch (error: any) {

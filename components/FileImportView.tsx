@@ -43,64 +43,56 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
     setFiles(files.filter((f) => f.id !== id));
   };
 
-  const handleStartImport = () => {
+  const handleStartImport = async () => {
     setIsImporting(true);
-    setTimeout(() => {
-      setIsImporting(false);
-      const targetFile = files[files.length - 1] || files[0];
-      let fileUrl: string | undefined;
-      let fileType: string | undefined;
+    const targetFile = files[files.length - 1] || files[0];
+    let dataUrl: string | undefined;
 
-      if (targetFile?.fileObject) {
-        fileUrl = URL.createObjectURL(targetFile.fileObject);
-        fileType = targetFile.fileObject.type;
-
+    if (targetFile?.fileObject) {
+      dataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof window !== "undefined" && reader.result) {
-            localStorage.setItem("dochub_pdf_data", reader.result as string);
-            localStorage.setItem("dochub_pdf_type", targetFile.fileObject?.type || "application/pdf");
-            localStorage.setItem("dochub_pdf_name", targetFile.name);
-          }
-        };
-        reader.readAsDataURL(targetFile.fileObject);
-      }
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(targetFile.fileObject!);
+      });
+    }
 
-      const activeDoc: ActiveDocument = targetFile
-        ? {
-            id: targetFile.id,
-            name: targetFile.name,
-            size: targetFile.size,
-            pages: targetFile.pages,
-            fileUrl,
-            fileType: fileType || (targetFile.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image"),
-          }
-        : {
-            id: "doc-imported",
-            name: "Uploaded_Document_2026.pdf",
-            size: "2.4 MB",
-            pages: 1,
-          };
-
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("dochub_completed_fields");
-        localStorage.removeItem("dochub_placed_fields");
-        localStorage.removeItem("dochub_pdf_data");
-        sessionStorage.clear();
-
-        if (activeDoc.fileUrl) {
-          sessionStorage.setItem("dochub_active_fileUrl", activeDoc.fileUrl);
-          sessionStorage.setItem("dochub_active_fileType", activeDoc.fileType || "application/pdf");
-          sessionStorage.setItem("dochub_active_name", activeDoc.name);
+    const activeDoc: ActiveDocument = targetFile
+      ? {
+          id: targetFile.id,
+          name: targetFile.name,
+          size: targetFile.size,
+          pages: targetFile.pages,
+          fileUrl: dataUrl,
+          fileType: targetFile.fileObject?.type || (targetFile.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image"),
         }
-      }
+      : {
+          id: "doc-imported",
+          name: "Uploaded_Document_2026.pdf",
+          size: "2.4 MB",
+          pages: 1,
+        };
 
-      if (onImportComplete) {
-        onImportComplete(activeDoc);
-      } else {
-        setActiveView("editor");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("dochub_completed_fields");
+      localStorage.removeItem("dochub_placed_fields");
+
+      if (activeDoc.fileUrl) {
+        localStorage.setItem("dochub_pdf_data", activeDoc.fileUrl);
+        localStorage.setItem("dochub_pdf_type", activeDoc.fileType || "application/pdf");
+        localStorage.setItem("dochub_pdf_name", activeDoc.name);
+        sessionStorage.setItem("dochub_active_fileUrl", activeDoc.fileUrl);
+        sessionStorage.setItem("dochub_active_fileType", activeDoc.fileType || "application/pdf");
+        sessionStorage.setItem("dochub_active_name", activeDoc.name);
       }
-    }, 1200);
+    }
+
+    setIsImporting(false);
+
+    if (onImportComplete) {
+      onImportComplete(activeDoc);
+    } else {
+      setActiveView("editor");
+    }
   };
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);

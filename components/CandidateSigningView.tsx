@@ -102,6 +102,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   })();
 
   const [fields, setFields] = useState<DocumentField[]>(initialFields);
+
+  useEffect(() => {
+    if (documentData?.placedFields && documentData.placedFields.length > 0) {
+      setFields(documentData.placedFields);
+    }
+  }, [documentData?.id, documentData?.placedFields]);
   const [candidateName, setCandidateName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);

@@ -36,6 +36,9 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
               name: found.title,
               size: found.size || "1.2 MB",
               pages: found.pages || 1,
+              fileUrl: found.fileUrl,
+              fileType: found.fileType,
+              placedFields: found.placedFields,
             });
           }
         }

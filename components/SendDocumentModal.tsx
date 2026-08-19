@@ -61,7 +61,11 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
 
   if (!isOpen) return null;
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.com";
+  const baseUrl = (
+    typeof window !== "undefined"
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app"
+  ).replace(/\/$/, "");
   const candidateLink = `${baseUrl}/sign/${
     documentData?.id || "dh-884920"
   }?candidate=${encodeURIComponent(recipientEmail || "candidate@email.com")}`;
@@ -72,6 +76,10 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
 
     setIsSending(true);
 
+    const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
+    const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
+    const activePlacedFields = documentData?.placedFields || (typeof window !== "undefined" ? (localStorage.getItem("dochub_placed_fields") ? JSON.parse(localStorage.getItem("dochub_placed_fields")!) : []) : []);
+
     try {
       await fetch("/api/documents/send", {
         method: "POST",
@@ -80,6 +88,9 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           name: documentData?.name || "Agreement.pdf",
           size: documentData?.size || "1.2 MB",
           pages: documentData?.pages || 1,
+          fileUrl: activeFileUrl,
+          fileType: activeFileType,
+          placedFields: activePlacedFields,
           senderEmail: senderEmail,
           recipientEmail: recipientEmail,
           recipientName: recipientName || recipientEmail,
