@@ -4,8 +4,6 @@ import React from "react";
 import { ActiveView, UserSession } from "@/types/dochub";
 import {
   FileText,
-  Bell,
-  HelpCircle,
   Zap,
   LayoutDashboard,
   Upload,
@@ -87,28 +85,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Right section: Notifications, Help, Avatar */}
+      {/* Right section: Avatar */}
       <div className="flex items-center gap-2 md:gap-3">
-
-        {/* Help icon */}
-        <button
-          onClick={onOpenWalkthrough}
-          className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition relative group"
-          title="Help & Tour"
-        >
-          <HelpCircle className="w-5 h-5" />
-          <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-slate-900 text-white text-[10px] py-1 px-2 rounded shadow whitespace-nowrap z-50">
-            Tour & Help
-          </span>
-        </button>
-
-        {/* Notification bell with badge */}
-        <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs">
-            3
-          </span>
-        </button>
 
         {/* Divider */}
         <div className="h-5 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>

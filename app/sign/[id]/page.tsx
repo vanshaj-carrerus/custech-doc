@@ -24,12 +24,12 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
   });
 
   useEffect(() => {
-    // Optionally fetch document from MongoDB API if available
-    fetch(`/api/documents/list`)
+    // Optionally fetch document from MongoDB API by ID
+    fetch(`/api/documents/list?id=${encodeURIComponent(docId)}`)
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && data.documents) {
-          const found = data.documents.find((d: any) => d.id === docId || d.id.includes(docId));
+        if (data.success && data.documents && data.documents.length > 0) {
+          const found = data.documents[0];
           if (found) {
             setDocumentData({
               id: found.id,

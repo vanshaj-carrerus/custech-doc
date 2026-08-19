@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ActiveView, RecentDoc, ActiveDocument } from "@/types/dochub";
+import { ActiveView, RecentDoc, ActiveDocument, UserSession } from "@/types/dochub";
 import {
   Home,
   UploadCloud,
@@ -22,32 +22,41 @@ import {
 interface DashboardViewProps {
   setActiveView: (view: ActiveView) => void;
   onSelectDoc?: (doc: ActiveDocument) => void;
+  userSession?: UserSession;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveView, onSelectDoc }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  setActiveView,
+  onSelectDoc,
+  userSession,
+}) => {
   const [mongoDocs, setMongoDocs] = useState<RecentDoc[]>([]);
   const [isDbConnected, setIsDbConnected] = useState(false);
   const [filterTab, setFilterTab] = useState<"all" | "completed" | "pending">("all");
 
+  const userEmail = userSession?.email?.toLowerCase();
+
   useEffect(() => {
-    fetch("/api/documents/list")
+    if (!userEmail) return;
+
+    fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.documents) {
           setIsDbConnected(true);
-          if (data.documents.length > 0) {
-            setMongoDocs(data.documents);
-          }
+          setMongoDocs(data.documents);
         }
       })
       .catch((err) => console.warn("MongoDB fetch warning:", err));
 
-    // Check localStorage for local completed documents
+    // Check localStorage for local completed documents scoped to this user
     if (typeof window !== "undefined") {
-      const savedCompleted = localStorage.getItem("dochub_completed_fields");
+      const savedCompleted = localStorage.getItem(`dochub_completed_${userEmail}`);
       if (savedCompleted) {
         try {
-          const docName = localStorage.getItem("dochub_pdf_name") || "Commercial Lease Agreement 2026.pdf";
+          const docName =
+            localStorage.getItem(`dochub_pdf_name_${userEmail}`) ||
+            "Commercial Lease Agreement 2026.pdf";
           setMongoDocs((prev) => {
             const exists = prev.some((d) => d.title === docName);
             if (!exists) {
@@ -68,34 +77,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveView, onS
         } catch {}
       }
     }
-  }, []);
+  }, [userEmail]);
 
-  const defaultDocs: RecentDoc[] = mongoDocs.length > 0 ? mongoDocs : [
-    {
-      id: "doc-1",
-      title: "Commercial Lease Agreement 2026.pdf",
-      updatedAt: "10 mins ago",
-      pages: 14,
-      status: "Completed",
-      size: "2.4 MB",
-    },
-    {
-      id: "doc-2",
-      title: "Consulting_Services_SOW_v3.pdf",
-      updatedAt: "2 hours ago",
-      pages: 6,
-      status: "Pending",
-      size: "1.1 MB",
-    },
-    {
-      id: "doc-3",
-      title: "Employee NDA & Onboarding.pdf",
-      updatedAt: "Yesterday",
-      pages: 4,
-      status: "Draft",
-      size: "890 KB",
-    },
-  ];
+  const defaultDocs: RecentDoc[] = mongoDocs;
 
   const filteredDocs = defaultDocs.filter((doc) => {
     if (filterTab === "completed") return doc.status === "Completed";

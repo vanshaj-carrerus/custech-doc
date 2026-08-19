@@ -2,11 +2,36 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { DocumentRecord } from "@/models/Document";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await connectToDatabase();
 
-    const docs = await DocumentRecord.find({}).sort({ createdAt: -1 }).limit(20);
+    const { searchParams } = new URL(request.url);
+    const email = searchParams.get("email")?.toLowerCase() || searchParams.get("senderEmail")?.toLowerCase();
+    const docId = searchParams.get("id");
+
+    let query: any = {};
+
+    if (docId) {
+      query._id = docId;
+    } else if (email) {
+      // Strictly filter documents by user email (sender or recipient)
+      query = {
+        $or: [
+          { senderEmail: email },
+          { recipientEmail: email },
+        ],
+      };
+    } else {
+      // Security isolation: If no user email or doc ID is provided, return empty array to prevent data leakage
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        documents: [],
+      });
+    }
+
+    const docs = await DocumentRecord.find(query).sort({ createdAt: -1 }).limit(50);
 
     return NextResponse.json({
       success: true,
@@ -17,11 +42,11 @@ export async function GET() {
         senderEmail: d.senderEmail,
         recipientEmail: d.recipientEmail,
         recipientName: d.recipientName,
-        updatedAt: d.createdAt.toLocaleDateString("en-US", {
+        updatedAt: d.createdAt ? d.createdAt.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
-        }),
+        }) : "Recently",
         pages: d.pages || 1,
         status: d.status || "Completed",
         size: d.size || "1.2 MB",

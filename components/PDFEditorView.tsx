@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveView, DocumentField, ActiveDocument } from "@/types/dochub";
+import { detectPdfPageCount } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
   Grid,
@@ -67,6 +68,27 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const [fontSize, setFontSize] = useState("14px");
   const [showSignDropdown, setShowSignDropdown] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [detectedPages, setDetectedPages] = useState<number | null>(null);
+
+  useEffect(() => {
+    const activeFileUrl =
+      documentData?.fileUrl ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl")
+        : null);
+
+    if (activeFileUrl) {
+      detectPdfPageCount(activeFileUrl).then((count) => {
+        setDetectedPages(count);
+      });
+    } else if (documentData?.pages) {
+      setDetectedPages(documentData.pages);
+    }
+  }, [documentData]);
+
+  const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
+  const canvasMinHeightPx = pageCount * 1050;
+  const iframeHeightPx = pageCount * 950;
 
   // Placed interactive document fields on the A4 page
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
@@ -600,7 +622,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             className="relative bg-white shadow-2xl rounded-sm p-8 md:p-12 transition-transform duration-200 text-slate-800 font-sans border border-slate-300"
             style={{
               width: "794px",
-              minHeight: "1050px",
+              minHeight: `${canvasMinHeightPx}px`,
               transform: `scale(${zoomLevel / 100})`,
               transformOrigin: "top center",
             }}
@@ -626,7 +648,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   <span>•</span>
                   <span>{documentData?.size || "1.2 MB"}</span>
                   <span>•</span>
-                  <span>{documentData?.pages || 1} page(s)</span>
+                  <span>{pageCount} page(s)</span>
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
@@ -637,7 +659,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             </div>
 
             {/* Render Actual Uploaded File Content */}
-            <div className="relative min-h-[800px] flex flex-col justify-start">
+            <div className="relative flex flex-col justify-start" style={{ minHeight: `${iframeHeightPx}px` }}>
               {(() => {
                 const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
                 const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
@@ -648,19 +670,21 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     <img
                       src={activeFileUrl}
                       alt={docTitle}
-                      className="w-full h-auto max-h-[900px] object-contain rounded-lg border border-slate-200 shadow-inner"
+                      style={{ maxHeight: `${iframeHeightPx}px` }}
+                      className="w-full h-auto object-contain rounded-lg border border-slate-200 shadow-inner"
                     />
                   ) : (
                     <iframe
                       src={`${activeFileUrl}#toolbar=0`}
-                      className="w-full h-[900px] rounded-lg border border-slate-200 shadow-inner pointer-events-auto"
+                      style={{ height: `${iframeHeightPx}px` }}
+                      className="w-full rounded-lg border border-slate-200 shadow-inner pointer-events-auto"
                       title={docTitle}
                     />
                   );
                 }
                 return null;
               })() || (
-                <div className="w-full h-[850px] bg-slate-50/60 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center">
+                <div style={{ height: `${iframeHeightPx}px` }} className="w-full bg-slate-50/60 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center">
                   <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl mb-4">
                     <FileText className="w-12 h-12" />
                   </div>
@@ -675,7 +699,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     <span>•</span>
                     <span>Size: {documentData?.size || "2.4 MB"}</span>
                     <span>•</span>
-                    <span>Pages: {documentData?.pages || 1}</span>
+                    <span>Pages: {pageCount}</span>
                   </div>
                 </div>
               )}
@@ -1049,7 +1073,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             {/* Footer page number indicator */}
             <div className="absolute bottom-4 left-12 right-12 flex justify-between items-center text-[10px] text-slate-400 border-t border-slate-100 pt-2">
               <span>DocHub Secure Document Stream</span>
-              <span>Page 1 of {documentData?.pages || 1}</span>
+              <span>Page 1 of {pageCount}</span>
             </div>
           </div>
 
@@ -1073,7 +1097,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               <ZoomIn className="w-4 h-4" />
             </button>
             <div className="h-4 w-[1px] bg-slate-700"></div>
-            <span className="text-xs text-slate-300">Page 1 / {documentData?.pages || 1}</span>
+            <span className="text-xs text-slate-300">Page 1 / {pageCount}</span>
           </div>
         </main>
       </div>

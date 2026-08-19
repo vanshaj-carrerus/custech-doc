@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
+import { detectPdfPageCount } from "@/lib/pdfUtils";
 import {
   FileText,
   CheckCircle2,
@@ -129,6 +130,22 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const activeFileUrl = customFileUrl || documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
   const activeFileType = customFileType || documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
   const activeDocName = customFileName || documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") || sessionStorage.getItem("dochub_active_name") : null) || docName;
+
+  const [detectedPages, setDetectedPages] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeFileUrl) {
+      detectPdfPageCount(activeFileUrl).then((count) => {
+        setDetectedPages(count);
+      });
+    } else if (documentData?.pages) {
+      setDetectedPages(documentData.pages);
+    }
+  }, [activeFileUrl, documentData]);
+
+  const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
+  const containerMinHeightPx = pageCount * 1050;
+  const iframeHeightPx = pageCount * 950;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
     setFields((prev) =>
@@ -340,7 +357,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               style={{
                 width: "100%",
                 maxWidth: "794px",
-                minHeight: "1000px",
+                minHeight: `${containerMinHeightPx}px`,
               }}
             >
               {/* Embed actual uploaded document preview if fileUrl exists */}
@@ -350,13 +367,15 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                     <img
                       src={activeFileUrl}
                       alt={activeDocName}
-                      className="w-full h-full object-contain"
+                      style={{ maxHeight: `${iframeHeightPx}px` }}
+                      className="w-full h-auto object-contain"
                     />
                   ) : (
                     <iframe
                       src={`${activeFileUrl}#toolbar=0`}
                       title={activeDocName}
-                      className="w-full h-full border-0 pointer-events-auto"
+                      style={{ height: `${iframeHeightPx}px` }}
+                      className="w-full border-0 pointer-events-auto"
                     />
                   )}
                 </div>

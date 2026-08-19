@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ActiveView, ActiveDocument, UserSession } from "@/types/dochub";
 import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
@@ -21,29 +21,66 @@ export default function Home() {
   const [candidateEmail, setCandidateEmail] = useState("candidate@email.com");
 
   // User Authentication Session State
-  const [currentUserSession, setCurrentUserSession] = useState<UserSession | null>({
-    id: "usr-1",
-    name: "Jane Doe",
-    email: "jane.doe@dochub.com",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-    plan: "Pro Enterprise",
-    isLoggedIn: true,
-  });
+  const [currentUserSession, setCurrentUserSession] = useState<UserSession | null>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("dochub_current_user");
+      const isLoggedOut = localStorage.getItem("dochub_is_logged_out");
+      
+      if (savedUser && isLoggedOut !== "true") {
+        try {
+          setCurrentUserSession(JSON.parse(savedUser));
+        } catch {}
+      } else if (isLoggedOut !== "true") {
+        // Default initial session if first time visiting
+        const defaultSession: UserSession = {
+          id: "usr-1",
+          name: "Jane Doe",
+          email: "jane.doe@dochub.com",
+          avatarUrl:
+            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+          plan: "Pro Enterprise",
+          isLoggedIn: true,
+        };
+        setCurrentUserSession(defaultSession);
+        localStorage.setItem("dochub_current_user", JSON.stringify(defaultSession));
+      }
+      setIsAuthLoaded(true);
+    }
+  }, []);
+
+  const handleUpdateSession = (user: UserSession | null) => {
+    setCurrentUserSession(user);
+    if (typeof window !== "undefined") {
+      if (user) {
+        localStorage.setItem("dochub_current_user", JSON.stringify(user));
+        localStorage.setItem("dochub_is_logged_out", "false");
+      } else {
+        localStorage.removeItem("dochub_current_user");
+        localStorage.setItem("dochub_is_logged_out", "true");
+      }
+    }
+  };
 
   const [activeDocument, setActiveDocument] = useState<ActiveDocument | undefined>({
     id: "doc-default",
     name: "Commercial Lease Agreement 2026.pdf",
     size: "2.4 MB",
-    pages: 14,
+    pages: 1,
   });
+
+  if (!isAuthLoaded) {
+    return null;
+  }
 
   // If user is logged out, render Login View
   if (!currentUserSession || !currentUserSession.isLoggedIn) {
     return (
       <LoginView
         onLoginSuccess={(user) => {
-          setCurrentUserSession(user);
+          handleUpdateSession(user);
           setActiveView("dashboard");
         }}
       />
@@ -71,7 +108,7 @@ export default function Home() {
         onOpenWalkthrough={() => setIsOnboardingOpen(true)}
         onToggleSidebar={() => setIsOpenMobileSidebar(!isOpenMobileSidebar)}
         userSession={currentUserSession}
-        onLogout={() => setCurrentUserSession(null)}
+        onLogout={() => handleUpdateSession(null)}
       />
 
       {/* Main Content Area + Fixed Sidebar */}
@@ -84,7 +121,7 @@ export default function Home() {
             isOpenMobile={isOpenMobileSidebar}
             onCloseMobile={() => setIsOpenMobileSidebar(false)}
             userSession={currentUserSession}
-            onLogout={() => setCurrentUserSession(null)}
+            onLogout={() => handleUpdateSession(null)}
           />
         )}
 
@@ -98,6 +135,7 @@ export default function Home() {
             <DashboardView
               setActiveView={setActiveView}
               onSelectDoc={(doc) => setActiveDocument(doc)}
+              userSession={currentUserSession}
             />
           )}
 
@@ -115,6 +153,7 @@ export default function Home() {
             <CompletedDocsView
               setActiveView={setActiveView}
               onSelectDoc={(doc) => setActiveDocument(doc)}
+              userSession={currentUserSession}
             />
           )}
 

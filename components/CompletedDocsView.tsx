@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ActiveView, RecentDoc, ActiveDocument } from "@/types/dochub";
+import { ActiveView, RecentDoc, ActiveDocument, UserSession } from "@/types/dochub";
 import {
   CheckCircle2,
   FileText,
@@ -19,26 +19,33 @@ import {
 interface CompletedDocsViewProps {
   setActiveView: (view: ActiveView) => void;
   onSelectDoc?: (doc: ActiveDocument) => void;
+  userSession?: UserSession;
 }
 
 export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
   setActiveView,
   onSelectDoc,
+  userSession,
 }) => {
   const [completedDocs, setCompletedDocs] = useState<RecentDoc[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  const userEmail = userSession?.email?.toLowerCase();
+
   useEffect(() => {
-    fetch("/api/documents/list")
+    if (!userEmail) {
+      setIsLoading(false);
+      return;
+    }
+
+    fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
       .then((res) => res.json())
       .then((data) => {
         setIsLoading(false);
         if (data.success && data.documents) {
           const finished = data.documents.filter((d: any) => d.status === "Completed");
-          if (finished.length > 0) {
-            setCompletedDocs(finished);
-          }
+          setCompletedDocs(finished);
         }
       })
       .catch((err) => {
@@ -46,12 +53,14 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
         console.warn("MongoDB fetch error:", err);
       });
 
-    // Check localStorage completed documents
+    // Check localStorage scoped completed documents
     if (typeof window !== "undefined") {
-      const savedCompleted = localStorage.getItem("dochub_completed_fields");
+      const savedCompleted = localStorage.getItem(`dochub_completed_${userEmail}`);
       if (savedCompleted) {
         try {
-          const docName = localStorage.getItem("dochub_pdf_name") || "Commercial Lease Agreement 2026.pdf";
+          const docName =
+            localStorage.getItem(`dochub_pdf_name_${userEmail}`) ||
+            "Commercial Lease Agreement 2026.pdf";
           setCompletedDocs((prev) => {
             const exists = prev.some((d) => d.title === docName);
             if (!exists) {
@@ -72,34 +81,9 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
         } catch {}
       }
     }
-  }, []);
+  }, [userEmail]);
 
-  const sampleCompleted: RecentDoc[] = completedDocs.length > 0 ? completedDocs : [
-    {
-      id: "comp-1",
-      title: "Commercial Lease Agreement 2026.pdf",
-      updatedAt: "10 mins ago",
-      pages: 14,
-      status: "Completed",
-      size: "2.4 MB",
-    },
-    {
-      id: "comp-2",
-      title: "Executive Employment Agreement.pdf",
-      updatedAt: "2 hours ago",
-      pages: 8,
-      status: "Completed",
-      size: "1.8 MB",
-    },
-    {
-      id: "comp-3",
-      title: "Mutual NDA & Intellectual Property.pdf",
-      updatedAt: "Yesterday",
-      pages: 4,
-      status: "Completed",
-      size: "950 KB",
-    },
-  ];
+  const sampleCompleted: RecentDoc[] = completedDocs;
 
   const filteredDocs = sampleCompleted.filter((doc) =>
     doc.title.toLowerCase().includes(searchQuery.toLowerCase())
