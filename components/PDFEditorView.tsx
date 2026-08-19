@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveView, DocumentField, ActiveDocument } from "@/types/dochub";
-import { detectPdfPageCount } from "@/lib/pdfUtils";
+import { getPdfLayoutInfo } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
   Grid,
@@ -41,6 +41,7 @@ import {
   FileText,
   Move,
   Send,
+  Loader2,
 } from "lucide-react";
 
 interface PDFEditorViewProps {
@@ -70,6 +71,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const [showSignDropdown, setShowSignDropdown] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
+  const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
 
   useEffect(() => {
     const activeFileUrl =
@@ -79,8 +81,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         : null);
 
     if (activeFileUrl) {
-      detectPdfPageCount(activeFileUrl).then((count) => {
-        setDetectedPages(count);
+      getPdfLayoutInfo(activeFileUrl).then(({ pageCount, pageHeightPx }) => {
+        setDetectedPages(pageCount);
+        setDetectedPageHeightPx(pageHeightPx);
       });
     } else if (documentData?.pages) {
       setDetectedPages(documentData.pages);
@@ -105,7 +108,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   }, []);
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
-  const canvasMinHeightPx = pageCount * 1050;
+  const pageHeightPx = detectedPageHeightPx || 1050;
+  const canvasMinHeightPx = pageCount * pageHeightPx;
   const iframeHeightPx = canvasMinHeightPx;
 
   const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
@@ -134,8 +138,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         id: "f-1",
         type: "text",
         label: "Text Field",
-        x: 25,
-        y: 20,
+        x: 8,
+        y: 10,
         width: 260,
         height: 34,
         value: "Jane Doe (Client Representative)",
@@ -145,32 +149,32 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         id: "f-2",
         type: "date",
         label: "Date Signed",
-        x: 65,
-        y: 20,
+        x: 58,
+        y: 10,
         width: 170,
         height: 34,
         value: "August 18, 2026",
         fontSize: 13,
       },
       {
-        id: "f-3",
-        type: "signature",
-        label: "Signature",
-        x: 25,
-        y: 75,
-        width: 220,
-        height: 42,
-        isLocked: true,
-      },
-      {
         id: "f-4",
         type: "checkbox",
         label: "Check",
-        x: 10,
-        y: 70,
-        width: 230,
+        x: 8,
+        y: 17,
+        width: 260,
         height: 34,
         value: "I accept the agreement terms",
+      },
+      {
+        id: "f-3",
+        type: "signature",
+        label: "Signature",
+        x: 58,
+        y: 17,
+        width: 220,
+        height: 42,
+        isLocked: true,
       },
     ];
   });
@@ -379,22 +383,150 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     );
   };
 
-  // Step Width helper
+  // Step Width helper — scales height and font size proportionally so the field keeps its aspect ratio
   const handleStepWidth = (id: string, delta: number) => {
     setPlacedFields((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, width: Math.max(50, (f.width || 200) + delta) } : f
-      )
+      prev.map((f) => {
+        if (f.id !== id) return f;
+        const currentWidth = f.width || 200;
+        const currentHeight = f.height || 34;
+        const currentFontSize = f.fontSize || 14;
+        const newWidth = Math.max(50, currentWidth + delta);
+        const scale = newWidth / currentWidth;
+        const newHeight = Math.max(16, Math.round(currentHeight * scale));
+        const newFontSize = Math.min(32, Math.max(10, Math.round(currentFontSize * scale)));
+        return { ...f, width: newWidth, height: newHeight, fontSize: newFontSize };
+      })
     );
   };
 
-  // Step Height helper
+  // Step Height helper — scales width and font size proportionally so the field keeps its aspect ratio
   const handleStepHeight = (id: string, delta: number) => {
     setPlacedFields((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, height: Math.max(16, (f.height || 34) + delta) } : f
-      )
+      prev.map((f) => {
+        if (f.id !== id) return f;
+        const currentHeight = f.height || 34;
+        const currentWidth = f.width || 200;
+        const currentFontSize = f.fontSize || 14;
+        const newHeight = Math.max(16, currentHeight + delta);
+        const scale = newHeight / currentHeight;
+        const newWidth = Math.max(50, Math.round(currentWidth * scale));
+        const newFontSize = Math.min(32, Math.max(10, Math.round(currentFontSize * scale)));
+        return { ...f, height: newHeight, width: newWidth, fontSize: newFontSize };
+      })
     );
+  };
+
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Builds a real downloadable PDF from the source document with every placed
+  // field's current value (text, checkbox, signature image) drawn onto the
+  // matching page, at the position/size it has in the on-screen editor.
+  const handleDownloadPdf = async () => {
+    if (!activeFileUrl || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+
+      let pdfDoc;
+      if (isImageDoc) {
+        const imgBytes = await (await fetch(activeFileUrl)).arrayBuffer();
+        pdfDoc = await PDFDocument.create();
+        const img = activeFileUrl.includes("image/png")
+          ? await pdfDoc.embedPng(imgBytes)
+          : await pdfDoc.embedJpg(imgBytes);
+        const page = pdfDoc.addPage([img.width, img.height]);
+        page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+      } else {
+        const pdfBytes = await (await fetch(activeFileUrl)).arrayBuffer();
+        pdfDoc = await PDFDocument.load(pdfBytes);
+      }
+
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const pages = pdfDoc.getPages();
+      const renderWidthPx = 794;
+      const totalHeightPx = pageCount * pageHeightPx;
+
+      // Standard PDF fonts only support WinAnsi (Latin-1) characters — strip anything
+      // outside that range (emoji, etc.) so one odd character can't break the export.
+      const toWinAnsiSafe = (s: string) => s.replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+
+      for (const field of placedFields) {
+        try {
+          const absYpx = (field.y / 100) * totalHeightPx;
+          const pageIndex = Math.min(pages.length - 1, Math.floor(absYpx / pageHeightPx));
+          const withinPageYpx = absYpx - pageIndex * pageHeightPx;
+          const pdfPage = pages[pageIndex];
+          const scale = pdfPage.getWidth() / renderWidthPx;
+
+          const xPt = (field.x / 100) * pdfPage.getWidth();
+          const wPt = (field.width || 200) * scale;
+          const hPt = (field.height || 34) * scale;
+          const topYPt = pdfPage.getHeight() - withinPageYpx * scale;
+          const bottomYPt = topYPt - hPt;
+
+          if (field.type === "signature") {
+            if (field.value?.startsWith("data:image")) {
+              const sigBytes = await (await fetch(field.value)).arrayBuffer();
+              const sigImg = field.value.includes("image/png")
+                ? await pdfDoc.embedPng(sigBytes)
+                : await pdfDoc.embedJpg(sigBytes);
+              pdfPage.drawImage(sigImg, { x: xPt, y: bottomYPt, width: wPt, height: hPt });
+            } else if (field.value) {
+              pdfPage.drawText(toWinAnsiSafe(field.value), {
+                x: xPt + 2,
+                y: bottomYPt + hPt * 0.3,
+                size: Math.min(18, hPt * 0.6),
+                font,
+                color: rgb(0.05, 0.15, 0.55),
+              });
+            }
+          } else if (field.type === "checkbox") {
+            pdfPage.drawText(toWinAnsiSafe(`[X] ${field.value || ""}`), {
+              x: xPt + 2,
+              y: bottomYPt + hPt * 0.3,
+              size: Math.min(12, hPt * 0.5),
+              font,
+              color: rgb(0.1, 0.1, 0.1),
+            });
+          } else if (field.type === "image" || field.type === "attachment") {
+            if (field.value?.startsWith("data:image")) {
+              const imgBytes2 = await (await fetch(field.value)).arrayBuffer();
+              const embedded = field.value.includes("image/png")
+                ? await pdfDoc.embedPng(imgBytes2)
+                : await pdfDoc.embedJpg(imgBytes2);
+              pdfPage.drawImage(embedded, { x: xPt, y: bottomYPt, width: wPt, height: hPt });
+            }
+          } else if (field.value) {
+            pdfPage.drawText(toWinAnsiSafe(String(field.value)), {
+              x: xPt + 2,
+              y: bottomYPt + hPt * 0.3,
+              size: Math.min((field.fontSize || 14) * scale, hPt * 0.75),
+              font,
+              color: rgb(0.1, 0.1, 0.1),
+            });
+          }
+        } catch (fieldErr) {
+          console.warn(`Skipping field "${field.label}" in PDF export:`, fieldErr);
+        }
+      }
+
+      const outBytes = await pdfDoc.save();
+      const blob = new Blob([outBytes as BlobPart], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docTitle.replace(/\.pdf$/i, "")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to generate PDF download:", err);
+      alert("Couldn't generate the PDF. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -411,168 +543,179 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             <ArrowLeft className="w-4 h-4" />
           </button>
 
-          <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+          {/* Hidden on completed/signed documents — nothing here is editable once a doc is locked */}
+          {!isCompletedDoc && (
+            <>
+              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
 
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Thumbnails Grid View"
-          >
-            <Grid className="w-4 h-4" />
-          </button>
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Thumbnails Grid View"
+              >
+                <Grid className="w-4 h-4" />
+              </button>
 
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Print PDF"
-          >
-            <Printer className="w-4 h-4" />
-          </button>
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Print PDF"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
 
-          <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
 
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Undo"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Redo"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Undo"
+              >
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Redo"
+              >
+                <Redo2 className="w-4 h-4" />
+              </button>
 
-          <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
 
-          <button
-            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg font-semibold transition"
-            title="Select & Move Tool"
-          >
-            <MousePointer className="w-4 h-4" />
-          </button>
+              <button
+                className="p-1.5 bg-blue-50 text-blue-600 rounded-lg font-semibold transition"
+                title="Select & Move Tool"
+              >
+                <MousePointer className="w-4 h-4" />
+              </button>
 
-          <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
 
-          {/* Text Formatting */}
-          <button
-            onClick={() => {
-              const next = !isBold;
-              setIsBold(next);
-              if (activeFieldId) {
-                setPlacedFields((prev) =>
-                  prev.map((f) => (f.id === activeFieldId ? { ...f, isBold: next } : f))
-                );
-              }
-            }}
-            className={`p-1.5 rounded-lg transition ${
-              isBold
-                ? "bg-blue-100 text-blue-700 font-bold"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-            title="Bold"
-          >
-            <Bold className="w-4 h-4" />
-          </button>
+              {/* Text Formatting */}
+              <button
+                onClick={() => {
+                  const next = !isBold;
+                  setIsBold(next);
+                  if (activeFieldId) {
+                    setPlacedFields((prev) =>
+                      prev.map((f) => (f.id === activeFieldId ? { ...f, isBold: next } : f))
+                    );
+                  }
+                }}
+                className={`p-1.5 rounded-lg transition ${
+                  isBold
+                    ? "bg-blue-100 text-blue-700 font-bold"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Bold"
+              >
+                <Bold className="w-4 h-4" />
+              </button>
 
-          <button
-            onClick={() => {
-              const next = !isItalic;
-              setIsItalic(next);
-              if (activeFieldId) {
-                setPlacedFields((prev) =>
-                  prev.map((f) => (f.id === activeFieldId ? { ...f, isItalic: next } : f))
-                );
-              }
-            }}
-            className={`p-1.5 rounded-lg transition ${
-              isItalic
-                ? "bg-blue-100 text-blue-700 font-bold"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-            title="Italic"
-          >
-            <Italic className="w-4 h-4" />
-          </button>
+              <button
+                onClick={() => {
+                  const next = !isItalic;
+                  setIsItalic(next);
+                  if (activeFieldId) {
+                    setPlacedFields((prev) =>
+                      prev.map((f) => (f.id === activeFieldId ? { ...f, isItalic: next } : f))
+                    );
+                  }
+                }}
+                className={`p-1.5 rounded-lg transition ${
+                  isItalic
+                    ? "bg-blue-100 text-blue-700 font-bold"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Italic"
+              >
+                <Italic className="w-4 h-4" />
+              </button>
 
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-            <Palette className="w-3.5 h-3.5 text-slate-500 ml-1" />
-            <input
-              type="color"
-              value={selectedColor}
-              onChange={(e) => {
-                const color = e.target.value;
-                setSelectedColor(color);
-                if (activeFieldId) {
-                  setPlacedFields((prev) =>
-                    prev.map((f) => (f.id === activeFieldId ? { ...f, color } : f))
-                  );
-                }
-              }}
-              className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-              title="Text Color"
-            />
-          </div>
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <Palette className="w-3.5 h-3.5 text-slate-500 ml-1" />
+                <input
+                  type="color"
+                  value={selectedColor}
+                  onChange={(e) => {
+                    const color = e.target.value;
+                    setSelectedColor(color);
+                    if (activeFieldId) {
+                      setPlacedFields((prev) =>
+                        prev.map((f) => (f.id === activeFieldId ? { ...f, color } : f))
+                      );
+                    }
+                  }}
+                  className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
+                  title="Text Color"
+                />
+              </div>
 
-          <select
-            value={fontSize}
-            onChange={(e) => {
-              const size = e.target.value;
-              setFontSize(size);
-              const numSize = parseInt(size);
-              if (activeFieldId) {
-                setPlacedFields((prev) =>
-                  prev.map((f) => (f.id === activeFieldId ? { ...f, fontSize: numSize } : f))
-                );
-              }
-            }}
-            className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none"
-          >
-            <option value="12px">12px</option>
-            <option value="14px">14px</option>
-            <option value="16px">16px</option>
-            <option value="18px">18px</option>
-            <option value="20px">20px</option>
-          </select>
+              <select
+                value={fontSize}
+                onChange={(e) => {
+                  const size = e.target.value;
+                  setFontSize(size);
+                  const numSize = parseInt(size);
+                  if (activeFieldId) {
+                    setPlacedFields((prev) =>
+                      prev.map((f) => (f.id === activeFieldId ? { ...f, fontSize: numSize } : f))
+                    );
+                  }
+                }}
+                className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none"
+              >
+                <option value="12px">12px</option>
+                <option value="14px">14px</option>
+                <option value="16px">16px</option>
+                <option value="18px">18px</option>
+                <option value="20px">20px</option>
+              </select>
 
-          <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
 
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Bullet List"
-          >
-            <List className="w-4 h-4" />
-          </button>
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Numbered List"
-          >
-            <ListOrdered className="w-4 h-4" />
-          </button>
-
-          {/* End of Text formatting controls */}
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Bullet List"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Numbered List"
+              >
+                <ListOrdered className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Far Right Toolbar Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Prominent Send Request Button */}
-          <button
-            onClick={() => {
-              if (documentData) {
-                documentData.placedFields = placedFields;
-              }
-              if (onOpenSendModal) onOpenSendModal();
-            }}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-emerald-600/30 transition transform hover:-translate-y-0.5 text-xs"
-          >
-            <Send className="w-4 h-4" />
-            <span>Send Request</span>
-          </button>
+          {/* Prominent Send Request Button — hidden once the doc is already completed/signed */}
+          {!isCompletedDoc && (
+            <button
+              onClick={() => {
+                if (documentData) {
+                  documentData.placedFields = placedFields;
+                }
+                if (onOpenSendModal) onOpenSendModal();
+              }}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-emerald-600/30 transition transform hover:-translate-y-0.5 text-xs"
+            >
+              <Send className="w-4 h-4" />
+              <span>Send Request</span>
+            </button>
+          )}
 
           <button
-            className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-            title="Download PDF"
+            onClick={handleDownloadPdf}
+            disabled={!activeFileUrl || isDownloading}
+            className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition"
+            title={activeFileUrl ? "Download PDF" : "Upload a document first"}
           >
-            <Download className="w-4 h-4" />
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
           </button>
 
           <button
@@ -759,8 +902,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                       isCompletedDoc
                         ? "border-0 bg-transparent z-20 pointer-events-none"
                         : isActive
-                        ? "ring-2 ring-blue-500 bg-blue-50/90 border border-blue-500 z-30 shadow-md"
-                        : "bg-blue-50/50 hover:bg-blue-50/80 border border-blue-400/80 z-10"
+                        ? "ring-2 ring-blue-500 bg-white border border-blue-500 z-30 shadow-lg"
+                        : "bg-white/95 hover:bg-white border border-blue-300 shadow-xs hover:shadow-sm z-10"
                     }`}
                     style={{
                       left: `${field.x}%`,
@@ -779,8 +922,13 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     )}
 
                     {/* Floating Active Field Toolbar Overlay (Only in editing mode) */}
+                    {/* Anchored to whichever side keeps it inside the paper bounds: fields on the left half grow the toolbar rightward, fields on the right half grow it leftward. */}
                     {isActive && !isCompletedDoc && (
-                      <div className="absolute -top-11 right-0 bg-slate-900 text-white rounded-xl px-2.5 py-1 flex items-center gap-2 text-[10px] shadow-xl z-50 animate-in fade-in whitespace-nowrap border border-slate-700">
+                      <div
+                        className={`absolute -top-11 bg-slate-900 text-white rounded-xl px-2.5 py-1 flex items-center gap-2 text-[10px] shadow-xl z-50 animate-in fade-in whitespace-nowrap border border-slate-700 ${
+                          field.x < 50 ? "left-0" : "right-0"
+                        }`}
+                      >
                         {/* Prominent Move Handle Button */}
                         <div
                           onMouseDown={(e) => handleFieldMouseDown(field.id, e)}
@@ -970,7 +1118,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         />
                       ) : field.type === "signature" ? (
                         <div
-                          onClick={() => setActiveFieldId(field.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFieldId(field.id);
+                          }}
                           className="w-full h-full flex items-center justify-between px-2 bg-blue-50/30 cursor-pointer"
                         >
                           {field.value && field.value.startsWith("data:image") ? (

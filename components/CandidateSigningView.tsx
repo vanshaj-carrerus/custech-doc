@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
-import { detectPdfPageCount } from "@/lib/pdfUtils";
+import { getPdfLayoutInfo } from "@/lib/pdfUtils";
 import {
   FileText,
   CheckCircle2,
@@ -62,8 +62,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         id: "f-1",
         type: "text",
         label: "Candidate Legal Name",
-        x: 34,
-        y: 22,
+        x: 8,
+        y: 10,
         width: 270,
         height: 36,
         value: "",
@@ -72,8 +72,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         id: "f-2",
         type: "date",
         label: "Date Signed",
-        x: 70,
-        y: 22,
+        x: 60,
+        y: 10,
         width: 180,
         height: 36,
         value: new Date().toISOString().split("T")[0],
@@ -82,9 +82,9 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         id: "f-3",
         type: "checkbox",
         label: "Accept Terms",
-        x: 17,
-        y: 69,
-        width: 240,
+        x: 8,
+        y: 17,
+        width: 260,
         height: 34,
         value: "I accept the agreement terms",
       },
@@ -92,8 +92,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         id: "f-4",
         type: "signature",
         label: "Signature",
-        x: 34,
-        y: 74,
+        x: 60,
+        y: 17,
         width: 230,
         height: 42,
         value: "",
@@ -138,11 +138,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const activeDocName = customFileName || documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") || sessionStorage.getItem("dochub_active_name") : null) || docName;
 
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
+  const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
 
   useEffect(() => {
     if (activeFileUrl) {
-      detectPdfPageCount(activeFileUrl).then((count) => {
-        setDetectedPages(count);
+      getPdfLayoutInfo(activeFileUrl).then(({ pageCount, pageHeightPx }) => {
+        setDetectedPages(pageCount);
+        setDetectedPageHeightPx(pageHeightPx);
       });
     } else if (documentData?.pages) {
       setDetectedPages(documentData.pages);
@@ -150,7 +152,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   }, [activeFileUrl, documentData]);
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
-  const containerMinHeightPx = pageCount * 1050;
+  const pageHeightPx = detectedPageHeightPx || 1050;
+  const containerMinHeightPx = pageCount * pageHeightPx;
   const iframeHeightPx = containerMinHeightPx;
   const isImageDoc = !!(activeFileType?.includes("image") || activeFileUrl?.startsWith("data:image/"));
 
@@ -421,7 +424,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       className={`absolute rounded flex flex-col justify-center p-1 transition-all ${
                         isCompleted
                           ? "border-0 bg-transparent pointer-events-none"
-                          : "border border-blue-400/80 bg-blue-50/60 hover:bg-blue-50/90"
+                          : "border border-blue-300 bg-white/95 hover:bg-white shadow-xs hover:shadow-sm"
                       }`}
                       style={{
                         left: `${field.x}%`,

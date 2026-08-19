@@ -23,6 +23,10 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
     pages: 14,
   });
 
+  // Falls back to a placeholder only when the document lookup fails (e.g. no DB
+  // connection) — otherwise this is replaced with the real sender's email below.
+  const [recruiterEmail, setRecruiterEmail] = useState<string | null>(null);
+
   useEffect(() => {
     // Optionally fetch document from MongoDB API by ID
     fetch(`/api/documents/list?id=${encodeURIComponent(docId)}`)
@@ -40,16 +44,19 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
               fileType: found.fileType,
               placedFields: found.placedFields,
             });
+            if (found.senderEmail) {
+              setRecruiterEmail(found.senderEmail);
+            }
           }
         }
       })
       .catch((err) => console.warn("Doc fetch warning:", err));
   }, [docId]);
 
-  const defaultUserSession: UserSession = {
+  const userSession: UserSession = {
     id: "usr-recruiter",
     name: "Recruiter Workspace",
-    email: "jane.doe@dochub.com",
+    email: recruiterEmail || "jane.doe@dochub.com",
     plan: "Pro Enterprise",
     isLoggedIn: true,
   };
@@ -57,7 +64,7 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
   return (
     <CandidateSigningView
       documentData={documentData}
-      userSession={defaultUserSession}
+      userSession={userSession}
       candidateEmail={candidateEmail}
       onBackToDashboard={() => {
         window.location.href = "/";
