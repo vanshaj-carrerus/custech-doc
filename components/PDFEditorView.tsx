@@ -56,7 +56,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   onOpenSendModal,
   documentData,
 }) => {
-  const isCompletedDoc = typeof window !== "undefined" && (!!localStorage.getItem("dochub_completed_fields") || documentData?.status === "Completed");
+  const isCompletedDoc = documentData?.status === "Completed" || (typeof window !== "undefined" && (!documentData || !documentData.status) && !!localStorage.getItem("dochub_completed_fields"));
 
   // Paper canvas ref for position calculations
   const paperRef = useRef<HTMLDivElement>(null);
@@ -174,7 +174,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         }
       }
     }
-  }, [documentData?.id]);
+  }, [documentData?.id, documentData?.filledFields, documentData?.placedFields]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && placedFields.length > 0) {
@@ -243,8 +243,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const startFieldY = targetField.y;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = ((moveEvent.clientX - startX) / (paperRect.width * (zoomLevel / 100))) * 100;
-      const deltaY = ((moveEvent.clientY - startY) / (paperRect.height * (zoomLevel / 100))) * 100;
+      const deltaX = ((moveEvent.clientX - startX) / paperRect.width) * 100;
+      const deltaY = ((moveEvent.clientY - startY) / paperRect.height) * 100;
 
       const newX = Math.max(0, Math.min(88, startFieldX + deltaX));
       const newY = Math.max(0, Math.min(94, startFieldY + deltaY));
@@ -666,35 +666,43 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
           {/* A4 Paper Container - 1:1 Canvas Geometry */}
           <div
-            ref={paperRef}
-            onClick={() => setActiveFieldId(null)}
-            className="relative bg-white shadow-2xl rounded-lg overflow-hidden transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
+            className="flex justify-center transition-all duration-200 flex-shrink-0 mx-auto"
             style={{
-              width: "794px",
-              minHeight: isImageDoc ? "auto" : `${canvasMinHeightPx}px`,
-              transform: `scale(${zoomLevel / 100})`,
-              transformOrigin: "top center",
+              width: `${794 * (zoomLevel / 100)}px`,
+              minHeight: "auto",
             }}
           >
-                {/* Render Actual Uploaded File Content */}
-                {activeFileUrl ? (
-                  isImageDoc ? (
-                    <div className="relative w-full z-0">
-                      <img
-                        src={activeFileUrl}
-                        alt={docTitle}
-                        className="w-full h-auto block select-none pointer-events-none"
-                      />
-                    </div>
-                  ) : (
-                    <div className="absolute inset-0 z-0 overflow-hidden">
-                      <iframe
-                        src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                        className="w-full h-full border-0 pointer-events-auto"
-                        title={docTitle}
-                      />
-                    </div>
-                  )
+            <div
+              ref={paperRef}
+              onClick={() => setActiveFieldId(null)}
+              className="relative bg-white shadow-2xl rounded-lg overflow-hidden transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
+              style={{
+                width: "794px",
+                minHeight: "auto",
+                transform: `scale(${zoomLevel / 100})`,
+                transformOrigin: "top center",
+              }}
+            >
+                  {/* Render Actual Uploaded File Content */}
+                  {activeFileUrl ? (
+                    isImageDoc ? (
+                      <div className="relative w-full z-0 bg-white">
+                        <img
+                          src={activeFileUrl}
+                          alt={docTitle}
+                          className="w-full h-auto block select-none pointer-events-none"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative w-full z-0 bg-white overflow-hidden min-h-[600px]">
+                        <iframe
+                          src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                          className="w-full min-h-[750px] border-0 pointer-events-auto block"
+                          style={{ width: "100%", height: "750px", border: 0, margin: 0, padding: 0 }}
+                          title={docTitle}
+                        />
+                      </div>
+                    )
                 ) : (
                   <div className="w-full h-full min-h-[600px] bg-slate-50/60 p-8 flex flex-col items-center justify-center text-center">
                     <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl mb-4">
@@ -1086,6 +1094,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               <span>DocHub Secure Document Stream</span>
               <span>Page 1 of {pageCount}</span>
             </div>
+          </div>
           </div>
 
           {/* Floating Zoom & Page Controls Bar */}

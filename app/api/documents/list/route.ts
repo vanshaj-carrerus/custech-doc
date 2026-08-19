@@ -53,6 +53,7 @@ export async function GET(request: Request) {
         fileUrl: d.fileUrl,
         fileType: d.fileType,
         placedFields: d.placedFields,
+        filledFields: d.filledFields || d.placedFields,
       })),
     });
   } catch (error: any) {

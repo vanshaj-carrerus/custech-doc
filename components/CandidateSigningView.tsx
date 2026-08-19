@@ -363,13 +363,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               className="relative bg-white text-slate-900 shadow-2xl border border-slate-300 rounded-lg overflow-hidden transition-all duration-200 flex-shrink-0"
               style={{
                 width: "794px",
-                minHeight: isImageDoc ? "auto" : `${containerMinHeightPx}px`,
+                minHeight: "auto",
               }}
             >
                 {/* Embed actual uploaded document preview if fileUrl exists */}
                 {activeFileUrl ? (
                   isImageDoc ? (
-                    <div className="relative w-full z-0">
+                    <div className="relative w-full z-0 bg-white">
                       <img
                         src={activeFileUrl}
                         alt={activeDocName}
@@ -377,11 +377,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       />
                     </div>
                   ) : (
-                    <div className="absolute inset-0 z-0 overflow-hidden">
+                    <div className="relative w-full z-0 bg-white overflow-hidden min-h-[600px]">
                       <iframe
                         src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
                         title={activeDocName}
-                        className="w-full h-full border-0 pointer-events-auto"
+                        className="w-full min-h-[750px] border-0 pointer-events-auto block"
+                        style={{ width: "100%", height: "750px", border: 0, margin: 0, padding: 0 }}
                       />
                     </div>
                   )
