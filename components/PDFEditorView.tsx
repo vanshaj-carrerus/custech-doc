@@ -90,6 +90,11 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const canvasMinHeightPx = pageCount * 1050;
   const iframeHeightPx = canvasMinHeightPx;
 
+  const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
+  const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
+  const docTitle = documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") : null) || "Document.pdf";
+  const isImageDoc = !!(activeFileType?.includes("image") || activeFileUrl?.startsWith("data:image/"));
+
   // Placed interactive document fields on the A4 page
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
     if (typeof window !== "undefined") {
@@ -666,55 +671,50 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             className="relative bg-white shadow-2xl rounded-lg overflow-hidden transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
             style={{
               width: "794px",
-              minHeight: `${canvasMinHeightPx}px`,
+              minHeight: isImageDoc ? "auto" : `${canvasMinHeightPx}px`,
               transform: `scale(${zoomLevel / 100})`,
               transformOrigin: "top center",
             }}
           >
-
-            {/* Render Actual Uploaded File Content */}
-            <div className="absolute inset-0 z-0 overflow-hidden">
-              {(() => {
-                const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
-                const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
-                const docTitle = documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") : null) || "Document.pdf";
-
-                if (activeFileUrl) {
-                  return activeFileType?.includes("image") ? (
-                    <img
-                      src={activeFileUrl}
-                      alt={docTitle}
-                      className="w-full h-full object-contain"
-                    />
+                {/* Render Actual Uploaded File Content */}
+                {activeFileUrl ? (
+                  isImageDoc ? (
+                    <div className="relative w-full z-0">
+                      <img
+                        src={activeFileUrl}
+                        alt={docTitle}
+                        className="w-full h-auto block select-none pointer-events-none"
+                      />
+                    </div>
                   ) : (
-                    <iframe
-                      src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                      className="w-full h-full border-0 pointer-events-auto"
-                      title={docTitle}
-                    />
-                  );
-                }
-                return null;
-              })() || (
-                <div className="w-full h-full bg-slate-50/60 p-8 flex flex-col items-center justify-center text-center">
-                  <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl mb-4">
-                    <FileText className="w-12 h-12" />
+                    <div className="absolute inset-0 z-0 overflow-hidden">
+                      <iframe
+                        src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                        className="w-full h-full border-0 pointer-events-auto"
+                        title={docTitle}
+                      />
+                    </div>
+                  )
+                ) : (
+                  <div className="w-full h-full min-h-[600px] bg-slate-50/60 p-8 flex flex-col items-center justify-center text-center">
+                    <div className="p-4 bg-blue-100 text-blue-600 rounded-2xl mb-4">
+                      <FileText className="w-12 h-12" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 max-w-lg truncate mb-2">
+                      {documentData?.name || "Uploaded Document File"}
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-md mb-6">
+                      Document is loaded and ready for editing, form field placement, and e-signatures.
+                    </p>
+                    <div className="flex items-center gap-4 text-xs font-semibold text-slate-600 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-2xs">
+                      <span>Format: PDF</span>
+                      <span>•</span>
+                      <span>Size: {documentData?.size || "2.4 MB"}</span>
+                      <span>•</span>
+                      <span>Pages: {pageCount}</span>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900 max-w-lg truncate mb-2">
-                    {documentData?.name || "Uploaded Document File"}
-                  </h3>
-                  <p className="text-xs text-slate-500 max-w-md mb-6">
-                    Document is loaded and ready for editing, form field placement, and e-signatures.
-                  </p>
-                  <div className="flex items-center gap-4 text-xs font-semibold text-slate-600 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-2xs">
-                    <span>Format: PDF</span>
-                    <span>•</span>
-                    <span>Size: {documentData?.size || "2.4 MB"}</span>
-                    <span>•</span>
-                    <span>Pages: {pageCount}</span>
-                  </div>
-                </div>
-              )}
+                )}
 
               {/* Precise Draggable & Resizable Placed Fields */}
               {placedFields.map((field) => {
@@ -1080,7 +1080,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   </div>
                 );
               })}
-            </div>
 
             {/* Footer page number indicator */}
             <div className="absolute bottom-4 left-12 right-12 flex justify-between items-center text-[10px] text-slate-400 border-t border-slate-100 pt-2">
