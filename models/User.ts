@@ -6,6 +6,8 @@ export interface IUser extends Document {
   password?: string;
   plan: string;
   avatarUrl?: string;
+  role: "admin" | "user";
+  status: "pending" | "approved" | "rejected";
   createdAt: Date;
 }
 
@@ -16,6 +18,8 @@ const UserSchema: Schema<IUser> = new Schema(
     password: { type: String, required: false },
     plan: { type: String, default: "Pro Enterprise" },
     avatarUrl: { type: String },
+    role: { type: String, enum: ["admin", "user"], default: "user" },
+    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
   },
   { timestamps: true }
 );

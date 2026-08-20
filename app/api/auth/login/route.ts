@@ -46,7 +46,8 @@ export async function POST(request: Request) {
         );
       }
 
-      // Create new user record in MongoDB database
+      // Create new user record in MongoDB database — new accounts start
+      // pending until an admin approves them in the admin panel.
       const newUser = await User.create({
         name: name?.trim() || cleanEmail.split("@")[0],
         email: cleanEmail,
@@ -54,18 +55,18 @@ export async function POST(request: Request) {
         plan: "Pro Enterprise",
         avatarUrl:
           "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+        role: "user",
+        status: "pending",
       });
 
       return NextResponse.json({
         success: true,
-        message: "Account registered successfully in database",
+        pendingApproval: true,
+        message: "Account request submitted! An admin needs to approve your account before you can sign in.",
         user: {
           id: newUser._id.toString(),
           name: newUser.name,
           email: newUser.email,
-          plan: newUser.plan,
-          avatarUrl: newUser.avatarUrl,
-          isLoggedIn: true,
         },
       });
     } else {
@@ -81,6 +82,28 @@ export async function POST(request: Request) {
         );
       }
 
+      if (existingUser.status === "pending") {
+        return NextResponse.json(
+          {
+            success: false,
+            pendingApproval: true,
+            message: "Your account is awaiting admin approval. Please check back soon.",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (existingUser.status === "rejected") {
+        return NextResponse.json(
+          {
+            success: false,
+            rejected: true,
+            message: "Your account request was rejected. Contact the admin for details.",
+          },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
         message: "Signed in successfully from database record",
@@ -90,6 +113,7 @@ export async function POST(request: Request) {
           email: existingUser.email,
           plan: existingUser.plan,
           avatarUrl: existingUser.avatarUrl,
+          role: existingUser.role,
           isLoggedIn: true,
         },
       });

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowRight,
   ShieldCheck,
+  Clock,
 } from "lucide-react";
 
 interface LoginViewProps {
@@ -39,6 +40,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
 
   const getRegisteredEmails = (): string[] => {
     if (typeof window === "undefined") return [];
@@ -66,6 +68,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     if (!email) return;
     setErrorMessage("");
+    setInfoMessage("");
 
     const cleanEmail = email.toLowerCase().trim();
 
@@ -110,6 +113,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
       addRegisteredEmail(cleanEmail);
 
+      if (data.pendingApproval) {
+        setInfoMessage(data.message || "Account request submitted! Waiting for admin approval.");
+        setAuthMode("signin");
+        return;
+      }
+
       if (data.user) {
         onLoginSuccess({
           id: data.user.id,
@@ -117,6 +126,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           email: data.user.email || cleanEmail,
           avatarUrl: data.user.avatarUrl,
           plan: data.user.plan || "Pro Enterprise",
+          role: data.user.role || "user",
           isLoggedIn: true,
         });
       }
@@ -155,6 +165,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               onClick={() => {
                 setAuthMode("signin");
                 setErrorMessage("");
+                setInfoMessage("");
               }}
               className={`py-2 rounded-xl transition-all ${
                 authMode === "signin"
@@ -169,6 +180,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               onClick={() => {
                 setAuthMode("signup");
                 setErrorMessage("");
+                setInfoMessage("");
               }}
               className={`py-2 rounded-xl transition-all ${
                 authMode === "signup"
@@ -197,6 +209,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-900 text-xs font-medium flex items-start gap-2.5 leading-relaxed text-left animate-in fade-in">
               <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Info Message Banner (e.g. pending admin approval) */}
+          {infoMessage && (
+            <div className="p-3 bg-sky-50 border border-sky-200/80 rounded-2xl text-sky-900 text-xs font-medium flex items-start gap-2.5 leading-relaxed text-left animate-in fade-in">
+              <Clock className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+              <span>{infoMessage}</span>
             </div>
           )}
 

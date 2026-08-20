@@ -506,11 +506,56 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             <input
                               type="text"
                               readOnly={isCompleted}
-                              value={field.value || "I accept terms"}
+                              value={field.value || field.placeholder || "I accept terms"}
                               onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
                               className="bg-transparent border-0 focus:outline-none text-xs text-slate-800 font-semibold w-full"
                             />
                           </label>
+                        ) : field.type === "radio" ? (
+                          <div className="w-full h-full flex flex-col justify-center gap-1 overflow-y-auto py-1">
+                            {(field.options && field.options.length > 0 ? field.options : ["Option 1"]).map(
+                              (option, idx) => (
+                                <label
+                                  key={idx}
+                                  className="flex items-center gap-1.5 cursor-pointer font-semibold text-slate-800"
+                                  style={{ fontSize: `${field.fontSize || 14}px` }}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={field.id}
+                                    disabled={isCompleted}
+                                    checked={field.value === option}
+                                    onChange={() => handleFieldValueChange(field.id, option)}
+                                    className="text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                                    style={{
+                                      width: `${Math.max(12, field.fontSize || 14)}px`,
+                                      height: `${Math.max(12, field.fontSize || 14)}px`,
+                                    }}
+                                  />
+                                  <span>{option}</span>
+                                </label>
+                              )
+                            )}
+                          </div>
+                        ) : field.type === "dropdown" ? (
+                          <select
+                            disabled={isCompleted}
+                            value={field.value || ""}
+                            onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
+                            className="w-full h-full bg-transparent border-0 focus:outline-none text-slate-900 font-semibold cursor-pointer"
+                            style={{ fontSize: `${field.fontSize || 14}px` }}
+                          >
+                            <option value="" disabled>
+                              Select an option
+                            </option>
+                            {(field.options && field.options.length > 0 ? field.options : ["Option 1"]).map(
+                              (option, idx) => (
+                                <option key={idx} value={option}>
+                                  {option}
+                                </option>
+                              )
+                            )}
+                          </select>
                         ) : field.type === "image" || field.type === "attachment" ? (
                           <div
                             onClick={() => {
@@ -561,7 +606,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                               setCandidateName(e.target.value);
                               handleFieldValueChange(field.id, e.target.value);
                             }}
-                            placeholder={`Fill ${field.label}...`}
+                            placeholder={field.placeholder || `Fill ${field.label}...`}
                             className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900"
                           />
                         )}

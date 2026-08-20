@@ -9,6 +9,7 @@ import {
   LogOut,
   User,
   CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 
 interface NavbarProps {
@@ -88,6 +89,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {userSession?.email || "user@email.com"}
                 </p>
               </div>
+
+              {userSession?.role === "admin" && (
+                <button
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    window.location.href = "/admin";
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sky-700 hover:bg-sky-50 rounded-xl font-semibold transition"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Admin Panel</span>
+                </button>
+              )}
 
               <button
                 onClick={() => {

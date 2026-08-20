@@ -13,6 +13,8 @@ export interface DocumentField {
   isItalic?: boolean;
   color?: string;
   value?: string;
+  placeholder?: string;
+  options?: string[];
   isLocked?: boolean;
 }
 
@@ -59,4 +61,5 @@ export interface UserSession {
   avatarUrl?: string;
   plan: string;
   isLoggedIn: boolean;
+  role?: 'admin' | 'user';
 }

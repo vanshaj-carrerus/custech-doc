@@ -19,8 +19,6 @@ import {
   Zap,
   HelpCircle,
   Download,
-  Share2,
-  MoreVertical,
   Type,
   AlignLeft,
   CheckSquare,
@@ -35,13 +33,13 @@ import {
   ZoomOut,
   ChevronDown,
   X,
-  Stamp,
   GripVertical,
   Check,
   FileText,
   Move,
   Send,
   Loader2,
+  Plus,
 } from "lucide-react";
 
 interface PDFEditorViewProps {
@@ -72,6 +70,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const [zoomLevel, setZoomLevel] = useState(100);
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
+
+  const sidebarFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const activeFileUrl =
@@ -142,7 +142,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         y: 10,
         width: 260,
         height: 34,
-        value: "Jane Doe (Client Representative)",
+        value: "",
+        placeholder: "Jane Doe (Client Representative)",
         fontSize: 14,
       },
       {
@@ -153,7 +154,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         y: 10,
         width: 170,
         height: 34,
-        value: "August 18, 2026",
+        value: new Date().toISOString().split("T")[0],
         fontSize: 13,
       },
       {
@@ -164,7 +165,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         y: 17,
         width: 260,
         height: 34,
-        value: "I accept the agreement terms",
+        value: "",
+        placeholder: "I accept the agreement terms",
       },
       {
         id: "f-3",
@@ -216,7 +218,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     { type: "image", label: "Image Box", icon: ImageIcon, isLocked: false },
     { type: "attachment", label: "Attachment", icon: Paperclip, isLocked: true },
     { type: "signature", label: "Signature", icon: PenTool, isLocked: true },
-    { type: "initials", label: "Initials", icon: Stamp, isLocked: false },
     { type: "date", label: "Date Signed", icon: Calendar, isLocked: false },
   ] as const;
 
@@ -228,7 +229,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     dropY?: number
   ) => {
     const width = type === "paragraph" ? 360 : 200;
-    const height = type === "paragraph" ? 80 : 34;
+    const height = type === "paragraph" ? 80 : type === "radio" ? 70 : 34;
     const hasDropPosition = dropX !== undefined && dropY !== undefined;
 
     const newField: DocumentField = {
@@ -241,6 +242,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       height,
       fontSize: 14,
       value: type === "date" ? "2026-08-18" : "",
+      options: type === "radio" || type === "dropdown" ? ["Option 1", "Option 2"] : undefined,
       isLocked,
     };
     setPlacedFields([...placedFields, newField]);
@@ -258,6 +260,41 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         });
       });
     }
+  };
+
+  // Adds a file picked from the sidebar's Upload button as a new Image Box
+  // element placed on the document — it does not touch the base PDF/image
+  // being edited, it just adds another element on top of it.
+  const handleSidebarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const newField: DocumentField = {
+        id: `field-${Date.now()}`,
+        type: "image",
+        label: "Image Box",
+        x: Math.floor(20 + Math.random() * 40),
+        y: Math.floor(25 + Math.random() * 40),
+        width: 220,
+        height: 160,
+        fontSize: 14,
+        value: dataUrl,
+        isLocked: false,
+      };
+      setPlacedFields((prev) => [...prev, newField]);
+      setActiveFieldId(newField.id);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = paperRef.current?.querySelector(`[data-field-id="${newField.id}"]`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      });
+    };
+    reader.readAsDataURL(selectedFile);
+    e.target.value = "";
   };
 
   // Drag-and-drop of a block from the sidebar onto the PDF canvas
@@ -440,36 +477,61 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     );
   };
 
-  // Step Width helper — scales height and font size proportionally so the field keeps its aspect ratio
+  const handleUpdateRadioOption = (id: string, index: number, text: string) => {
+    setPlacedFields((prev) =>
+      prev.map((f) => {
+        if (f.id !== id) return f;
+        const options = [...(f.options || [])];
+        options[index] = text;
+        return { ...f, options };
+      })
+    );
+  };
+
+  const handleAddRadioOption = (id: string) => {
+    setPlacedFields((prev) =>
+      prev.map((f) =>
+        f.id === id
+          ? { ...f, options: [...(f.options || []), `Option ${(f.options?.length || 0) + 1}`] }
+          : f
+      )
+    );
+  };
+
+  const handleRemoveRadioOption = (id: string, index: number) => {
+    setPlacedFields((prev) =>
+      prev.map((f) =>
+        f.id === id ? { ...f, options: (f.options || []).filter((_, i) => i !== index) } : f
+      )
+    );
+  };
+
+  // Step Width helper — scales font size proportionally with width so text keeps fitting the field
   const handleStepWidth = (id: string, delta: number) => {
     setPlacedFields((prev) =>
       prev.map((f) => {
         if (f.id !== id) return f;
         const currentWidth = f.width || 200;
-        const currentHeight = f.height || 34;
         const currentFontSize = f.fontSize || 14;
         const newWidth = Math.max(50, currentWidth + delta);
         const scale = newWidth / currentWidth;
-        const newHeight = Math.max(16, Math.round(currentHeight * scale));
         const newFontSize = Math.min(32, Math.max(10, Math.round(currentFontSize * scale)));
-        return { ...f, width: newWidth, height: newHeight, fontSize: newFontSize };
+        return { ...f, width: newWidth, fontSize: newFontSize };
       })
     );
   };
 
-  // Step Height helper — scales width and font size proportionally so the field keeps its aspect ratio
+  // Step Height helper — scales font size proportionally with height so text keeps fitting the field
   const handleStepHeight = (id: string, delta: number) => {
     setPlacedFields((prev) =>
       prev.map((f) => {
         if (f.id !== id) return f;
         const currentHeight = f.height || 34;
-        const currentWidth = f.width || 200;
         const currentFontSize = f.fontSize || 14;
         const newHeight = Math.max(16, currentHeight + delta);
         const scale = newHeight / currentHeight;
-        const newWidth = Math.max(50, Math.round(currentWidth * scale));
         const newFontSize = Math.min(32, Math.max(10, Math.round(currentFontSize * scale)));
-        return { ...f, height: newHeight, width: newWidth, fontSize: newFontSize };
+        return { ...f, height: newHeight, fontSize: newFontSize };
       })
     );
   };
@@ -775,16 +837,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             )}
           </button>
 
-          <button
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Share Document"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-
-          <button className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition">
-            <MoreVertical className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -801,6 +853,22 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 Click to Add
               </span>
             </div>
+
+            <input
+              type="file"
+              ref={sidebarFileInputRef}
+              onChange={handleSidebarFileUpload}
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => sidebarFileInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 w-full px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload</span>
+            </button>
 
             <div className="sticky! top-0! z-10! grid grid-cols-1 gap-2">
               {buildingBlocks.map((block) => {
@@ -876,8 +944,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   <FileText className="w-4 h-4 flex-shrink-0" /> Uploaded Document Preview
                 </div>
               )}
-              <h1 className="text-base md:text-lg font-bold text-slate-900 truncate max-w-xl" title={documentData?.name}>
-                {documentData?.name || "Uploaded Document"}
+              <h1 className="text-base md:text-lg font-bold text-slate-900 truncate max-w-xl" title={docTitle}>
+                {docTitle}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
                 <span>ID: DH-2026-{documentData?.id ? documentData.id.slice(-6) : "884920"}</span>
@@ -1040,6 +1108,39 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                           </button>
                         )}
 
+                        {(field.type === "text" ||
+                          field.type === "paragraph" ||
+                          field.type === "checkbox" ||
+                          field.type === "signature") && (
+                          <>
+                            <div className="h-3.5 w-[1px] bg-slate-700"></div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400 font-medium">Placeholder:</span>
+                              <input
+                                type="text"
+                                value={field.placeholder || ""}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setPlacedFields((prev) =>
+                                    prev.map((f) => {
+                                      if (f.id !== field.id) return f;
+                                      // Editing the placeholder is how the recruiter previews
+                                      // what candidates will see, so clear any stale value that
+                                      // would otherwise hide it — but never wipe a real drawn
+                                      // signature image.
+                                      const keepValue = f.value?.startsWith("data:image");
+                                      return { ...f, placeholder: next, value: keepValue ? f.value : "" };
+                                    })
+                                  );
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Custom placeholder..."
+                                className="bg-slate-800 text-white placeholder-slate-500 rounded px-1.5 py-0.5 w-32 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                          </>
+                        )}
+
                         <div className="h-3.5 w-[1px] bg-slate-700"></div>
 
                         {/* Width adjustment */}
@@ -1161,7 +1262,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          placeholder="Type text..."
+                          placeholder={field.placeholder || "Type text..."}
                           className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-900 ${
                             field.isBold ? "font-bold" : "font-normal"
                           } ${field.isItalic ? "italic" : ""}`}
@@ -1180,7 +1281,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          placeholder="Type paragraph text..."
+                          placeholder={field.placeholder || "Type paragraph text..."}
                           className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 resize-none text-slate-900 ${
                             field.isBold ? "font-bold" : "font-normal"
                           } ${field.isItalic ? "italic" : ""}`}
@@ -1205,7 +1306,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             />
                           ) : (
                             <span className="font-serif italic text-blue-800 text-sm font-bold truncate">
-                              {field.value || "Sign Here ✍️"}
+                              {field.value || field.placeholder || "Sign Here ✍️"}
                             </span>
                           )}
                         </div>
@@ -1242,12 +1343,83 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                           />
                           <input
                             type="text"
-                            value={field.value || "Checkbox option"}
+                            value={field.value || field.placeholder || "Checkbox option"}
                             onChange={(e) => handleUpdateFieldValue(field.id, e.target.value)}
                             onFocus={() => setActiveFieldId(field.id)}
                             className="bg-transparent border-0 focus:outline-none text-xs text-slate-800 font-semibold w-full"
                           />
                         </label>
+                      ) : field.type === "radio" ? (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFieldId(field.id);
+                          }}
+                          className="w-full h-full flex flex-col justify-center gap-1 overflow-y-auto py-1"
+                        >
+                          {(field.options && field.options.length > 0 ? field.options : ["Option 1"]).map(
+                            (option, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5 group/option">
+                                <span
+                                  className="flex-shrink-0 rounded-full border-2 border-slate-400"
+                                  style={{
+                                    width: `${Math.max(12, field.fontSize || 14)}px`,
+                                    height: `${Math.max(12, field.fontSize || 14)}px`,
+                                  }}
+                                ></span>
+                                <input
+                                  type="text"
+                                  value={option}
+                                  onChange={(e) => handleUpdateRadioOption(field.id, idx, e.target.value)}
+                                  onFocus={() => setActiveFieldId(field.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="bg-transparent border-0 focus:outline-none text-slate-800 font-semibold flex-1 min-w-0"
+                                  style={{ fontSize: `${field.fontSize || 14}px` }}
+                                />
+                                {(field.options?.length || 0) > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveRadioOption(field.id, idx);
+                                    }}
+                                    className="opacity-0 group-hover/option:opacity-100 text-slate-400 hover:text-red-600 transition flex-shrink-0"
+                                    title="Remove option"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddRadioOption(field.id);
+                            }}
+                            className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 transition"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add Option</span>
+                          </button>
+                        </div>
+                      ) : field.type === "dropdown" ? (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFieldId(field.id);
+                          }}
+                          className="w-full h-full flex items-center justify-between gap-1 px-1.5 border border-slate-300 rounded bg-slate-50/60 cursor-pointer"
+                        >
+                          <span
+                            className="truncate text-slate-700 font-semibold"
+                            style={{ fontSize: `${field.fontSize || 14}px` }}
+                          >
+                            {field.value || (field.options && field.options[0]) || "Select an option"}
+                          </span>
+                          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+                        </div>
                       ) : field.type === "image" || field.type === "attachment" ? (
                         <div
                           onClick={(e) => {
@@ -1303,6 +1475,60 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {/* Dropdown panel — rendered as a sibling of the Inline Content Box
+                        (not nested inside it) because that box has overflow-hidden, which
+                        would otherwise clip a panel meant to drop open below the field.
+                        Opens like a real select menu, listing every option as editable so
+                        the recruiter can define what candidates will get to choose from. */}
+                    {field.type === "dropdown" && isActive && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-full left-0 mt-1 min-w-[180px] max-h-48 overflow-y-auto bg-white border border-slate-300 rounded-lg shadow-xl z-50 p-1.5 space-y-1"
+                      >
+                        {(field.options && field.options.length > 0 ? field.options : ["Option 1"]).map(
+                          (option, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1.5 group/option px-1.5 py-1 rounded hover:bg-slate-50"
+                            >
+                              <ChevronDownSquare className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+                              <input
+                                type="text"
+                                value={option}
+                                onChange={(e) => handleUpdateRadioOption(field.id, idx, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="bg-transparent border-0 focus:outline-none text-slate-800 font-semibold text-xs flex-1 min-w-0"
+                              />
+                              {(field.options?.length || 0) > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveRadioOption(field.id, idx);
+                                  }}
+                                  className="opacity-0 group-hover/option:opacity-100 text-slate-400 hover:text-red-600 transition flex-shrink-0"
+                                  title="Remove option"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddRadioOption(field.id);
+                          }}
+                          className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 transition px-1.5 py-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Option</span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* Right Edge Handle (Width Resize) */}
                     {isActive && !isCompletedDoc && (

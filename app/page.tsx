@@ -91,7 +91,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">
+    <div className="h-screen overflow-hidden bg-slate-100 flex flex-col font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">
       {/* Top Navbar */}
       <Navbar
         activeView={activeView}
@@ -103,7 +103,7 @@ export default function Home() {
       />
 
       {/* Main Content Area + Fixed Sidebar */}
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 relative min-h-0">
         {/* Left Sidebar (Visible on Dashboard and File Import view) */}
         {activeView !== "editor" && (
           <Sidebar
@@ -118,7 +118,7 @@ export default function Home() {
 
         {/* View Routing Render */}
         <div
-          className={`flex-1 flex flex-col transition-all duration-200 ${
+          className={`flex-1 flex flex-col min-h-0 transition-all duration-200 ${
             activeView !== "editor" ? "md:pl-64" : "pl-0"
           }`}
         >
