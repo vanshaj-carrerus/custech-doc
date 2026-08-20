@@ -68,6 +68,7 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
       documentData={documentData}
       userSession={userSession}
       candidateEmail={candidateEmail}
+      standalone
       onBackToDashboard={() => {
         window.location.href = "/";
       }}

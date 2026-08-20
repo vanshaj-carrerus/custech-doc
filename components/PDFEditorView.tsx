@@ -283,6 +283,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         fontSize: 14,
         value: dataUrl,
         isLocked: false,
+        // Media added via this sidebar button is recruiter-authored content on
+        // the document, not a field the candidate is meant to fill/replace.
+        candidateLocked: true,
       };
       setPlacedFields((prev) => [...prev, newField]);
       setActiveFieldId(newField.id);

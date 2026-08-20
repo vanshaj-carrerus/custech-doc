@@ -32,6 +32,10 @@ interface CandidateSigningViewProps {
   userSession?: UserSession;
   candidateEmail?: string;
   onBackToDashboard: () => void;
+  // The link emailed to a candidate is standalone — they have no portal
+  // account, so any "back to dashboard"/navigation affordance would just
+  // dead-end them. Set true to render the form with no way out but signing it.
+  standalone?: boolean;
 }
 
 export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
@@ -39,6 +43,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   userSession,
   candidateEmail = "candidate@email.com",
   onBackToDashboard,
+  standalone = false,
 }) => {
   const recruiterEmail = userSession?.email || "jane.doe@dochub.com";
   const docName = documentData?.name || "Commercial Lease Agreement 2026.pdf";
@@ -108,6 +113,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
   const [fields, setFields] = useState<DocumentField[]>(initialFields);
 
+  // Checkbox and date fields always carry a usable default (a checked box,
+  // today's date), so only these types actually need the candidate to have
+  // entered something before the document can be submitted. Locked image/
+  // attachment fields are fixed media the recruiter placed on the document —
+  // the candidate can't touch them, so they're not the candidate's to fill.
+  const fieldTypesRequiringValue = ["text", "paragraph", "radio", "dropdown", "signature", "image", "attachment"];
+  const allFieldsFilled = fields.every(
+    (f) => f.candidateLocked || !fieldTypesRequiringValue.includes(f.type) || !!f.value?.trim()
+  );
+
   useEffect(() => {
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       setFields(documentData.filledFields);
@@ -115,7 +130,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       setFields(documentData.placedFields);
     }
   }, [documentData?.id, documentData?.placedFields, documentData?.filledFields]);
-  const [candidateName, setCandidateName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
 
@@ -144,14 +158,9 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  const candidateFileRef = React.useRef<HTMLInputElement>(null);
-  const [customFileUrl, setCustomFileUrl] = useState<string | null>(null);
-  const [customFileType, setCustomFileType] = useState<string | null>(null);
-  const [customFileName, setCustomFileName] = useState<string | null>(null);
-
-  const activeFileUrl = customFileUrl || documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
-  const activeFileType = customFileType || documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
-  const activeDocName = customFileName || documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") || sessionStorage.getItem("dochub_active_name") : null) || docName;
+  const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
+  const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
+  const activeDocName = documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") || sessionStorage.getItem("dochub_active_name") : null) || docName;
 
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
@@ -251,32 +260,18 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     setIsSigModalOpen(false);
   };
 
-  const handleCandidateFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-
-    const url = URL.createObjectURL(selectedFile);
-    setCustomFileUrl(url);
-    setCustomFileType(selectedFile.type || "application/pdf");
-    setCustomFileName(selectedFile.name);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof window !== "undefined" && reader.result) {
-        localStorage.setItem("dochub_pdf_data", reader.result as string);
-        localStorage.setItem("dochub_pdf_type", selectedFile.type || "application/pdf");
-        localStorage.setItem("dochub_pdf_name", selectedFile.name);
-      }
-    };
-    reader.readAsDataURL(selectedFile);
-  };
-
   const handleCompleteSigning = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!allFieldsFilled) return;
     setIsSubmitting(true);
 
     if (typeof window !== "undefined") {
-      localStorage.setItem("dochub_completed_fields", JSON.stringify(fields));
+      try {
+        localStorage.setItem("dochub_completed_fields", JSON.stringify(fields));
+      } catch {
+        // Best-effort local cache only (e.g. large embedded images can exceed
+        // the storage quota) — the real submission below is what matters.
+      }
     }
 
     try {
@@ -319,14 +314,18 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       {/* Top Navbar */}
       <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between sticky top-0 z-40 shadow-xs">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onBackToDashboard}
-            className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition flex items-center gap-1.5 text-xs font-bold"
-          >
-            <ArrowLeft className="w-4 h-4 text-blue-600" />
-            <span>Dashboard</span>
-          </button>
-          <div className="h-4 w-[1px] bg-slate-200"></div>
+          {!standalone && (
+            <>
+              <button
+                onClick={onBackToDashboard}
+                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition flex items-center gap-1.5 text-xs font-bold"
+              >
+                <ArrowLeft className="w-4 h-4 text-blue-600" />
+                <span>Dashboard</span>
+              </button>
+              <div className="h-4 w-[1px] bg-slate-200"></div>
+            </>
+          )}
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
             <span className="font-extrabold text-sm text-slate-900 truncate max-w-xs md:max-w-md">
@@ -351,28 +350,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               </button>
             </div>
           ) : (
-            <>
-              <input
-                type="file"
-                ref={candidateFileRef}
-                onChange={handleCandidateFileUpload}
-                accept=".pdf,.png,.jpg,.jpeg"
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => candidateFileRef.current?.click()}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                title="Upload or change PDF document"
-              >
-                <FileText className="w-3.5 h-3.5 text-blue-600" />
-                <span>Upload/View PDF</span>
-              </button>
-              <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>256-Bit Encrypted</span>
-              </div>
-            </>
+            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>256-Bit Encrypted</span>
+            </div>
           )}
         </div>
       </header>
@@ -557,55 +538,72 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             )}
                           </select>
                         ) : field.type === "image" || field.type === "attachment" ? (
-                          <div
-                            onClick={() => {
-                              if (!isCompleted) {
-                                const fileInput = document.createElement("input");
-                                fileInput.type = "file";
-                                fileInput.accept = "image/*,.pdf";
-                                fileInput.onchange = (e: any) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    const reader = new FileReader();
-                                    reader.onload = () => {
-                                      handleFieldValueChange(field.id, reader.result as string);
-                                    };
-                                    reader.readAsDataURL(file);
-                                  }
-                                };
-                                fileInput.click();
-                              }
-                            }}
-                            className="w-full h-full flex items-center justify-center p-1 bg-slate-50/80 hover:bg-slate-100/90 cursor-pointer border border-dashed border-blue-400 rounded overflow-hidden"
-                          >
-                            {field.value ? (
-                              field.value.startsWith("data:image") ? (
+                          field.candidateLocked ? (
+                            // Media the recruiter placed on the document (e.g. via the editor's
+                            // Upload button) — fixed content, not something the candidate can
+                            // replace.
+                            <div className="w-full h-full flex items-center justify-center p-1 overflow-hidden">
+                              {field.value && field.value.startsWith("data:image") ? (
                                 <img
                                   src={field.value}
-                                  alt="Uploaded Attachment"
+                                  alt="Document media"
                                   className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                 />
                               ) : (
-                                <div className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate">
-                                  <FileText className="w-4 h-4 text-blue-600" />
+                                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold truncate">
+                                  <FileText className="w-4 h-4 text-slate-500" />
                                   <span className="truncate">Attached File</span>
                                 </div>
-                              )
-                            ) : (
-                              <span className="text-[11px] text-blue-700 font-bold flex items-center gap-1">
-                                <FileText className="w-3.5 h-3.5" /> Upload Image / PDF
-                              </span>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => {
+                                if (!isCompleted) {
+                                  const fileInput = document.createElement("input");
+                                  fileInput.type = "file";
+                                  fileInput.accept = "image/*,.pdf";
+                                  fileInput.onchange = (e: any) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = () => {
+                                        handleFieldValueChange(field.id, reader.result as string);
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  };
+                                  fileInput.click();
+                                }
+                              }}
+                              className="w-full h-full flex items-center justify-center p-1 bg-slate-50/80 hover:bg-slate-100/90 cursor-pointer border border-dashed border-blue-400 rounded overflow-hidden"
+                            >
+                              {field.value ? (
+                                field.value.startsWith("data:image") ? (
+                                  <img
+                                    src={field.value}
+                                    alt="Uploaded Attachment"
+                                    className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
+                                  />
+                                ) : (
+                                  <div className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate">
+                                    <FileText className="w-4 h-4 text-blue-600" />
+                                    <span className="truncate">Attached File</span>
+                                  </div>
+                                )
+                              ) : (
+                                <span className="text-[11px] text-blue-700 font-bold flex items-center gap-1">
+                                  <FileText className="w-3.5 h-3.5" /> Upload Image / PDF
+                                </span>
+                              )}
+                            </div>
+                          )
                         ) : (
                           <input
                             type="text"
                             readOnly={isCompleted}
-                            value={field.value || candidateName}
-                            onChange={(e) => {
-                              setCandidateName(e.target.value);
-                              handleFieldValueChange(field.id, e.target.value);
-                            }}
+                            value={field.value || ""}
+                            onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
                             placeholder={field.placeholder || `Fill ${field.label}...`}
                             className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900"
                           />
@@ -620,20 +618,22 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
           {/* Actions Bar below canvas */}
           {!isCompleted && (
-            <div className="w-full max-w-[794px] bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-              <button
-                type="button"
-                onClick={onBackToDashboard}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition"
-              >
-                Cancel
-              </button>
+            <div className={`w-full max-w-[794px] bg-white border border-slate-200 rounded-2xl p-4 flex items-center shadow-sm ${standalone ? "justify-end" : "justify-between"}`}>
+              {!standalone && (
+                <button
+                  type="button"
+                  onClick={onBackToDashboard}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition"
+                >
+                  Cancel
+                </button>
+              )}
 
               <button
                 type="button"
                 onClick={handleCompleteSigning}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-xs md:text-sm px-8 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition transform hover:-translate-y-0.5 disabled:opacity-50"
+                disabled={isSubmitting || !allFieldsFilled}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-xs md:text-sm px-8 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>

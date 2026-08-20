@@ -16,6 +16,7 @@ export interface DocumentField {
   placeholder?: string;
   options?: string[];
   isLocked?: boolean;
+  candidateLocked?: boolean;
 }
 
 export interface UploadedFile {
