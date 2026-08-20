@@ -110,7 +110,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Quick Action Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
           {/* Card 1: Import Document */}
           <div
             onClick={() => setActiveView("import")}
@@ -132,28 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Send Sign Request */}
-          <div
-            onClick={() => setActiveView("editor")}
-            className="group flex flex-col justify-between p-5 bg-white hover:bg-emerald-50/30 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all duration-200 cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                <PenTool className="w-5 h-5 stroke-[2]" />
-              </div>
-              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 group-hover:text-emerald-600 transition-colors mb-1">
-                Send Sign Request
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Request candidate e-signatures and track delivery status.
-              </p>
-            </div>
-          </div>
-
-          {/* Card 3: Completed Documents */}
+          {/* Card 2: Completed Documents */}
           <div
             onClick={() => setFilterTab("completed")}
             className="group flex flex-col justify-between p-5 bg-white hover:bg-purple-50/30 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-purple-300 transition-all duration-200 cursor-pointer"

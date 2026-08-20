@@ -220,21 +220,78 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     { type: "date", label: "Date Signed", icon: Calendar, isLocked: false },
   ] as const;
 
-  const handleAddField = (type: DocumentField["type"], label: string, isLocked: boolean) => {
+  const handleAddField = (
+    type: DocumentField["type"],
+    label: string,
+    isLocked: boolean,
+    dropX?: number,
+    dropY?: number
+  ) => {
+    const width = type === "paragraph" ? 360 : 200;
+    const height = type === "paragraph" ? 80 : 34;
+    const hasDropPosition = dropX !== undefined && dropY !== undefined;
+
     const newField: DocumentField = {
       id: `field-${Date.now()}`,
       type,
       label,
-      x: Math.floor(20 + Math.random() * 40),
-      y: Math.floor(25 + Math.random() * 40),
-      width: type === "paragraph" ? 360 : 200,
-      height: type === "paragraph" ? 80 : 34,
+      x: hasDropPosition ? Math.max(0, Math.min(88, dropX!)) : Math.floor(20 + Math.random() * 40),
+      y: hasDropPosition ? Math.max(0, Math.min(94, dropY!)) : Math.floor(25 + Math.random() * 40),
+      width,
+      height,
       fontSize: 14,
-      value: type === "date" ? "2026-08-18" : `${label} Content`,
+      value: type === "date" ? "2026-08-18" : "",
       isLocked,
     };
     setPlacedFields([...placedFields, newField]);
     setActiveFieldId(newField.id);
+
+    // A random (click-to-add) position can land outside the current scroll position
+    // on a long document, making the new field invisible until the user scrolls
+    // manually — bring it into view so it's actually seen right away. A drag-and-drop
+    // placement is already visible where the user dropped it, so skip the jump there.
+    if (!hasDropPosition) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = paperRef.current?.querySelector(`[data-field-id="${newField.id}"]`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      });
+    }
+  };
+
+  // Drag-and-drop of a block from the sidebar onto the PDF canvas
+  const handleBlockDragStart = (
+    e: React.DragEvent,
+    type: DocumentField["type"],
+    label: string,
+    isLocked: boolean
+  ) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/json", JSON.stringify({ type, label, isLocked }));
+  };
+
+  const handleCanvasDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData("application/json");
+    if (!raw || !paperRef.current) return;
+
+    let block: { type: DocumentField["type"]; label: string; isLocked: boolean };
+    try {
+      block = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    const rect = paperRef.current.getBoundingClientRect();
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+    handleAddField(block.type, block.label, block.isLocked, xPct, yPct);
   };
 
   const handleRemoveField = (id: string, e: React.MouseEvent) => {
@@ -732,10 +789,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       </div>
 
       {/* Main Workspace Area (Left Tool Sidebar + Main Canvas) */}
-      <div className="flex-1 relative flex overflow-y-auto h-screen">
+      <div className="flex-1 relative flex overflow-y-auto h-full min-h-0">
         {/* Left Tool Sidebar (Hidden when document is completed) */}
         {!isCompletedDoc && (
-          <aside className="sticky! top-0 z-20! h-screen self-start max-h-[calc(100vh-64px)] w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 flex-shrink-0 select-none shadow-inner">
+          <aside className="sticky! top-0 z-20! h-full self-start max-h-[calc(100vh-64px)] w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 flex-shrink-0 select-none shadow-inner">
             <div className="px-1 pt-1 flex items-center justify-between">
               <span className="text-[11px] font-extrabold tracking-wider text-slate-400 uppercase">
                 Document Blocks
@@ -751,6 +808,15 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 return (
                   <button
                     key={block.type}
+                    draggable
+                    onDragStart={(e) =>
+                      handleBlockDragStart(
+                        e,
+                        block.type as DocumentField["type"],
+                        block.label,
+                        block.isLocked
+                      )
+                    }
                     onClick={() =>
                       handleAddField(
                         block.type as DocumentField["type"],
@@ -758,7 +824,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         block.isLocked
                       )
                     }
-                    className="group relative flex items-center justify-between p-2.5 bg-white hover:bg-blue-50/70 border border-slate-200/90 rounded-xl shadow-2xs hover:shadow-sm hover:border-blue-300 transition-all text-left"
+                    className="group relative flex items-center justify-between p-2.5 bg-white hover:bg-blue-50/70 border border-slate-200/90 rounded-xl shadow-2xs hover:shadow-sm hover:border-blue-300 transition-all text-left cursor-grab active:cursor-grabbing"
                   >
                     <div className="flex items-center gap-2.5">
                       <div className="p-1.5 bg-slate-100 group-hover:bg-blue-600 group-hover:text-white rounded-lg text-slate-600 transition-colors">
@@ -786,7 +852,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
             <div className="mt-auto pt-4 border-t border-slate-200 text-center">
               <p className="text-[11px] text-slate-400 font-medium">
-                Click any element to insert. Drag to move, pull right/bottom edges to resize width & height!
+                Click to insert, or drag a block onto the document to place it exactly. Drag a placed field to move it, pull right/bottom edges to resize.
               </p>
             </div>
           </aside>
@@ -839,7 +905,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             <div
               ref={paperRef}
               onClick={() => setActiveFieldId(null)}
-              className="relative bg-white shadow-2xl rounded-lg overflow-hidden transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
+              onDragOver={!isCompletedDoc ? handleCanvasDragOver : undefined}
+              onDrop={!isCompletedDoc ? handleCanvasDrop : undefined}
+              className="relative bg-white shadow-2xl rounded-lg transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
               style={{
                 width: "794px",
                 minHeight: "auto",
@@ -847,7 +915,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 transformOrigin: "top center",
               }}
             >
-                  {/* Render Actual Uploaded File Content */}
+                  {/* Render Actual Uploaded File Content — clipped to the rounded corners on its own,
+                      separately from the fields overlay below, so a field label/toolbar near the top
+                      of the page isn't chopped off by this container's own rounding. */}
+                  <div className="relative rounded-lg overflow-hidden">
                   {activeFileUrl ? (
                     isImageDoc ? (
                       <div className="relative w-full z-0 bg-white">
@@ -887,6 +958,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     </div>
                   </div>
                 )}
+                  </div>
 
               {/* Precise Draggable & Resizable Placed Fields */}
               {placedFields.map((field) => {
@@ -897,6 +969,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 return (
                   <div
                     key={field.id}
+                    data-field-id={field.id}
                     onMouseDown={(e) => !isCompletedDoc && handleFieldMouseDown(field.id, e)}
                     className={`absolute group/field transition-shadow rounded flex flex-col justify-center select-none ${
                       isCompletedDoc

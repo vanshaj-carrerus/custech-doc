@@ -43,6 +43,8 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
               fileUrl: found.fileUrl,
               fileType: found.fileType,
               placedFields: found.placedFields,
+              filledFields: found.filledFields,
+              status: found.status,
             });
             if (found.senderEmail) {
               setRecruiterEmail(found.senderEmail);

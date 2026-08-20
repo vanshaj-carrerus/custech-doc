@@ -8,7 +8,6 @@ import {
   ChevronDown,
   LogOut,
   User,
-  Plus,
   CheckCircle2,
 } from "lucide-react";
 
@@ -55,18 +54,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Right section: Primary Action + User Profile Dropdown */}
+      {/* Right section: User Profile Dropdown */}
       <div className="flex items-center gap-3">
-        {/* Quick Action Button */}
-        <button
-          onClick={() => setActiveView("import")}
-          className="hidden sm:flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition transform hover:-translate-y-0.5"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Import Document</span>
-        </button>
-
-        <div className="h-4 w-[1px] bg-slate-200 hidden sm:block"></div>
 
         {/* User profile avatar with Dropdown */}
         <div className="relative">

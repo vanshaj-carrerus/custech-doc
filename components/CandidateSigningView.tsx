@@ -43,8 +43,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const recruiterEmail = userSession?.email || "jane.doe@dochub.com";
   const docName = documentData?.name || "Commercial Lease Agreement 2026.pdf";
 
-  // Initial placed fields (read recruiter placed fields if available)
+  // Initial placed fields — prefer the candidate's already-submitted values
+  // (filledFields) so a refresh after completing shows what was actually signed,
+  // falling back to the recruiter's blank placed fields for a not-yet-signed doc.
   const initialFields: DocumentField[] = (() => {
+    if (documentData?.filledFields && documentData.filledFields.length > 0) {
+      return documentData.filledFields;
+    }
     if (documentData?.placedFields && documentData.placedFields.length > 0) {
       return documentData.placedFields;
     }
@@ -104,13 +109,24 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const [fields, setFields] = useState<DocumentField[]>(initialFields);
 
   useEffect(() => {
-    if (documentData?.placedFields && documentData.placedFields.length > 0) {
+    if (documentData?.filledFields && documentData.filledFields.length > 0) {
+      setFields(documentData.filledFields);
+    } else if (documentData?.placedFields && documentData.placedFields.length > 0) {
       setFields(documentData.placedFields);
     }
-  }, [documentData?.id, documentData?.placedFields]);
+  }, [documentData?.id, documentData?.placedFields, documentData?.filledFields]);
   const [candidateName, setCandidateName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
+
+  // The doc record (with its real status) is fetched asynchronously by the parent
+  // page, so pick up "Completed" once it arrives — this is what makes a refresh
+  // after signing land back on the locked, read-only view instead of the blank form.
+  useEffect(() => {
+    if (documentData?.status === "Completed") {
+      setIsCompleted(true);
+    }
+  }, [documentData?.status]);
   const [completionData, setCompletionData] = useState<{
     candidateEmail: string;
     recruiterEmail: string;
@@ -178,11 +194,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
     ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    ctx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -193,13 +211,15 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     ctx.strokeStyle = penColor;
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.lineTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
     ctx.stroke();
   };
 
