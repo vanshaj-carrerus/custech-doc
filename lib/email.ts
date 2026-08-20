@@ -56,39 +56,39 @@ export async function sendCandidateAgreementEmail({
   const mailSubject = subject || `Signature Requested: ${docName}`;
 
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 16px; background-color: #ffffff;">
-      <div style="background: linear-gradient(90deg, #2563eb, #059669); padding: 20px; text-align: center; border-radius: 12px; color: white;">
-        <h1 style="margin: 0; font-size: 24px;">DocHub E-Signature Portal</h1>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Secure Agreement Request</p>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+      <div style="padding: 28px 32px; border-bottom: 1px solid #e5e7eb;">
+        <p style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0f172a;">CUS-DOC</p>
+        <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Signature request</p>
       </div>
 
-      <div style="padding: 24px 0;">
-        <p style="font-size: 16px; color: #1e293b; font-weight: bold;">
-          Hello ${recipientName || "Candidate"},
+      <div style="padding: 32px;">
+        <p style="font-size: 14px; color: #0f172a; margin: 0 0 16px 0;">
+          Hello ${recipientName || "there"},
         </p>
-        <p style="font-size: 14px; color: #475569; line-height: 1.6;">
-          <strong>${senderEmail}</strong> has requested your signature on the agreement document:
+        <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 20px 0;">
+          <strong style="color: #0f172a;">${senderEmail}</strong> has requested your signature on the following document:
         </p>
-        
-        <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 8px; margin: 15px 0;">
-          <p style="margin: 0; font-size: 15px; font-weight: bold; color: #0f172a;">📄 ${docName}</p>
-          ${message ? `<p style="margin: 8px 0 0 0; font-size: 13px; color: #64748b; italic;">"${message}"</p>` : ""}
+
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+          <p style="margin: 0; font-size: 14px; font-weight: 600; color: #0f172a;">${docName}</p>
+          ${message ? `<p style="margin: 8px 0 0 0; font-size: 13px; color: #64748b;">"${message}"</p>` : ""}
         </div>
 
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${signingUrl}" style="background-color: #059669; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.3);">
-            ✍️ Click Here to Review & Sign Agreement
+        <div style="text-align: center; margin: 0 0 24px 0;">
+          <a href="${signingUrl}" style="background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block;">
+            Review &amp; sign document
           </a>
         </div>
 
-        <p style="font-size: 12px; color: #94a3b8; text-align: center;">
-          Or copy & paste this secure link into your browser:<br/>
-          <a href="${signingUrl}" style="color: #2563eb;">${signingUrl}</a>
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.6; margin: 0;">
+          Or copy this link into your browser:<br/>
+          <a href="${signingUrl}" style="color: #2563eb; word-break: break-all;">${signingUrl}</a>
         </p>
       </div>
 
-      <div style="border-top: 1px solid #e2e8f0; padding-top: 15px; text-align: center; font-size: 12px; color: #94a3b8;">
-        <p style="margin: 0;">Sent via DocHub Enterprise E-Sign Platform • 256-bit Encrypted</p>
+      <div style="border-top: 1px solid #e5e7eb; padding: 20px 32px; text-align: center;">
+        <p style="margin: 0; font-size: 12px; color: #94a3b8;">Sent via CUS-DOC · 256-bit encrypted</p>
       </div>
     </div>
   `;
@@ -96,7 +96,7 @@ export async function sendCandidateAgreementEmail({
   try {
     const transporter = getTransporter();
     const info = await transporter.sendMail({
-      from: `DocHub Platform <${EMAIL_USER || senderEmail}>`,
+      from: `CUS-DOC Platform <${EMAIL_USER || senderEmail}>`,
       to: recipientEmail,
       replyTo: senderEmail,
       subject: mailSubject,
@@ -127,32 +127,34 @@ export async function sendCompletedAgreementEmail({
   const docUrl = `${APP_URL}/sign/${docId}`;
 
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-      <div style="background: #059669; padding: 20px; text-align: center; border-radius: 12px; color: white;">
-        <h1 style="margin: 0; font-size: 24px;">✅ Agreement E-Signed & Completed!</h1>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Legally Executed Document</p>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+      <div style="padding: 28px 32px; border-bottom: 1px solid #e5e7eb;">
+        <p style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0f172a;">CUS-DOC</p>
+        <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Document signed &amp; completed</p>
       </div>
 
-      <div style="padding: 24px 0;">
-        <p style="font-size: 15px; color: #1e293b;">
-          Great news! The agreement <strong>"${docName}"</strong> has been fully reviewed and e-signed by candidate <strong>${recipientName || recipientEmail}</strong>.
+      <div style="padding: 32px;">
+        <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 20px 0;">
+          The document <strong style="color: #0f172a;">"${docName}"</strong> has been reviewed and signed by <strong style="color: #0f172a;">${recipientName || recipientEmail}</strong>. It is now fully executed.
         </p>
 
-        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 10px; margin: 20px 0;">
-          <p style="margin: 0; font-size: 14px; color: #166534; font-weight: bold;">
-            🎉 Copies Dispatched To:
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+          <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;">Copies sent to</p>
+          <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.7;">
+            ${senderEmail}<br/>
+            ${recipientEmail}
           </p>
-          <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px; color: #15803d;">
-            <li>Recruiter Account: <strong>${senderEmail}</strong></li>
-            <li>Candidate Account: <strong>${recipientEmail}</strong></li>
-          </ul>
         </div>
 
-        <div style="text-align: center; margin: 25px 0;">
-          <a href="${docUrl}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: bold; display: inline-block;">
-            📥 View Completed Signed Document
+        <div style="text-align: center;">
+          <a href="${docUrl}" style="background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block;">
+            View signed document
           </a>
         </div>
+      </div>
+
+      <div style="border-top: 1px solid #e5e7eb; padding: 20px 32px; text-align: center;">
+        <p style="margin: 0; font-size: 12px; color: #94a3b8;">Sent via CUS-DOC · 256-bit encrypted</p>
       </div>
     </div>
   `;
@@ -160,9 +162,9 @@ export async function sendCompletedAgreementEmail({
   try {
     const transporter = getTransporter();
     const info = await transporter.sendMail({
-      from: `DocHub Platform <${EMAIL_USER || senderEmail}>`,
+      from: `CUS-DOC Platform <${EMAIL_USER || senderEmail}>`,
       to: [recipientEmail, senderEmail],
-      subject: `✅ Completed & Signed: ${docName}`,
+      subject: `Completed & signed: ${docName}`,
       html: htmlContent,
     });
     console.log(`[Nodemailer] Completed agreement email sent to both ${recipientEmail} and ${senderEmail}`);

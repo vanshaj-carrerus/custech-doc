@@ -149,7 +149,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <FileText className="w-6 h-6 stroke-[2.2]" />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">
-            DocHub
+            CUS-DOC
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-0.5">
             Enterprise PDF Management & E-Signatures

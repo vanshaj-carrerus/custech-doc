@@ -960,7 +960,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             </div>
             <div className="text-right flex-shrink-0">
               <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
-                <Check className="w-3.5 h-3.5 stroke-[3]" /> DocHub Verified
+                <Check className="w-3.5 h-3.5 stroke-[3]" /> CUS-DOC Verified
               </div>
             </div>
           </div>
@@ -1565,7 +1565,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
             {/* Footer page number indicator */}
             <div className="absolute bottom-4 left-12 right-12 flex justify-between items-center text-[10px] text-slate-400 border-t border-slate-100 pt-2">
-              <span>DocHub Secure Document Stream</span>
+              <span>CUS-DOC Secure Document Stream</span>
               <span>Page 1 of {pageCount}</span>
             </div>
           </div>

@@ -50,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <FileText className="w-5 h-5 stroke-[2.2]" />
           </div>
           <span className="text-lg font-black tracking-tight text-slate-900 group-hover:text-sky-600 transition-colors">
-            DocHub
+            CUS-DOC
           </span>
         </div>
       </div>

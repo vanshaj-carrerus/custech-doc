@@ -93,7 +93,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>Workspace Overview</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-              DocHub Workspace
+              CUS-DOC Workspace
             </h1>
             <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-xl">
               Import, edit, sign, and manage legal agreements, NDAs, and PDF documents in one central hub.

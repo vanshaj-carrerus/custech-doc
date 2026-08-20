@@ -79,7 +79,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <Sparkles className="w-3.5 h-3.5" /> Quick Tour
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Welcome to DocHub!
+            Welcome to CUS-DOC!
           </h2>
           <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-xs">
             Everything you need to edit, sign, and manage PDFs in one place.

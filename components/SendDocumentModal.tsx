@@ -10,7 +10,6 @@ import {
   FileText,
   CheckCircle2,
   Loader2,
-  ShieldCheck,
   Sparkles,
   Copy,
   Check,
@@ -53,7 +52,6 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       documentData?.name || "Agreement"
     }".`
   );
-  const [requireAccessCode, setRequireAccessCode] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -240,24 +238,6 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition resize-none"
                 />
               </div>
-
-              {/* Security options checkbox */}
-              <label className="flex items-center gap-2 cursor-pointer p-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/70 transition">
-                <input
-                  type="checkbox"
-                  checked={requireAccessCode}
-                  onChange={(e) => setRequireAccessCode(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                />
-                <div className="text-xs">
-                  <span className="font-bold text-slate-800 flex items-center gap-1">
-                    Require Security Access PIN <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Send 6-digit access PIN before opening candidate portal
-                  </span>
-                </div>
-              </label>
             </div>
 
             {/* Footer Buttons */}

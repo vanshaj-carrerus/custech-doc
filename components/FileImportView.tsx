@@ -143,7 +143,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
                 Add Files
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                Upload one or more files to get started with DocHub
+                Upload one or more files to get started with CUS-DOC
               </p>
             </div>
             <button

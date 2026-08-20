@@ -36,7 +36,7 @@ export default function AdminPage() {
           href="/"
           className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl transition"
         >
-          Back to DocHub
+          Back to CUS-DOC
         </a>
       </div>
     );
