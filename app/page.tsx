@@ -9,6 +9,7 @@ import { FileImportView } from "@/components/FileImportView";
 import { PDFEditorView } from "@/components/PDFEditorView";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { SendDocumentModal } from "@/components/SendDocumentModal";
+import { SettingsModal } from "@/components/SettingsModal";
 import { LoginView } from "@/components/LoginView";
 import { CandidateSigningView } from "@/components/CandidateSigningView";
 import { CompletedDocsView } from "@/components/CompletedDocsView";
@@ -18,6 +19,7 @@ export default function Home() {
   const [isOpenMobileSidebar, setIsOpenMobileSidebar] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [candidateEmail, setCandidateEmail] = useState("candidate@email.com");
 
   // User Authentication Session State
@@ -100,6 +102,7 @@ export default function Home() {
         onToggleSidebar={() => setIsOpenMobileSidebar(!isOpenMobileSidebar)}
         userSession={currentUserSession}
         onLogout={() => handleUpdateSession(null)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       {/* Main Content Area + Fixed Sidebar */}
@@ -179,6 +182,14 @@ export default function Home() {
           setCandidateEmail(candEmail);
           setActiveView("candidate_sign");
         }}
+      />
+
+      {/* Account Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        userSession={currentUserSession}
+        onUpdateSession={handleUpdateSession}
       />
     </div>
   );

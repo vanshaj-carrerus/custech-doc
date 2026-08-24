@@ -64,3 +64,49 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    await connectToDatabase();
+
+    const { searchParams } = new URL(request.url);
+    const docId = searchParams.get("id");
+    const requesterEmail = searchParams.get("requesterEmail")?.toLowerCase();
+
+    if (!docId) {
+      return NextResponse.json(
+        { success: false, message: "Document id is required" },
+        { status: 400 }
+      );
+    }
+
+    const doc = await DocumentRecord.findById(docId);
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, message: "Document not found" },
+        { status: 404 }
+      );
+    }
+
+    const isOwner =
+      requesterEmail &&
+      (doc.senderEmail?.toLowerCase() === requesterEmail ||
+        doc.recipientEmail?.toLowerCase() === requesterEmail);
+    if (!isOwner) {
+      return NextResponse.json(
+        { success: false, message: "You don't have permission to delete this document" },
+        { status: 403 }
+      );
+    }
+
+    await DocumentRecord.findByIdAndDelete(docId);
+
+    return NextResponse.json({ success: true, message: "Document deleted" });
+  } catch (error: any) {
+    console.error("MongoDB Delete Document Error:", error);
+    return NextResponse.json(
+      { success: false, message: error.message || "Failed to delete document" },
+      { status: 500 }
+    );
+  }
+}

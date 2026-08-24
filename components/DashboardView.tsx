@@ -13,6 +13,10 @@ import {
   Download,
   Eye,
   Plus,
+  Trash2,
+  X,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 interface DashboardViewProps {
@@ -28,6 +32,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [mongoDocs, setMongoDocs] = useState<RecentDoc[]>([]);
   const [filterTab, setFilterTab] = useState<"all" | "completed" | "pending">("all");
+  const [deleteTarget, setDeleteTarget] = useState<RecentDoc | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const userEmail = userSession?.email?.toLowerCase();
   const userName = userSession?.name || "User";
@@ -82,6 +89,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
 
   const completedCount = defaultDocs.filter((d) => d.status === "Completed").length;
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || !userEmail) return;
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(
+        `/api/documents/list?id=${encodeURIComponent(deleteTarget.id)}&requesterEmail=${encodeURIComponent(userEmail)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!data.success) {
+        setDeleteError(data.message || "Failed to delete document");
+        setIsDeleting(false);
+        return;
+      }
+      setMongoDocs((prev) => prev.filter((d) => d.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setIsDeleting(false);
+    } catch {
+      setDeleteError("Unable to connect to server. Please try again.");
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="flex-1 bg-slate-50/60 min-h-[calc(100vh-64px)] p-4 md:p-8 lg:p-10 overflow-y-auto font-sans text-slate-900">
@@ -273,6 +304,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         >
                           <Download className="w-4 h-4 text-slate-600" />
                         </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteError("");
+                            setDeleteTarget(doc);
+                          }}
+                          className="p-1.5 hover:bg-red-50 rounded-lg transition"
+                          title="Delete Document"
+                        >
+                          <Trash2 className="w-4 h-4 text-slate-500 hover:text-red-600" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -286,6 +328,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 animate-in zoom-in-95">
+            <button
+              onClick={() => !isDeleting && setDeleteTarget(null)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center gap-3 pt-2">
+              <div className="p-3 bg-red-50 text-red-600 rounded-2xl border border-red-100">
+                <Trash2 className="w-6 h-6 stroke-[2]" />
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                  Delete this document?
+                </h2>
+                <p className="text-xs text-slate-500 mt-1.5 max-w-xs">
+                  <span className="font-semibold text-slate-700">"{deleteTarget.title}"</span> will be permanently deleted. This can't be undone.
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-900 text-xs font-medium flex items-start gap-2.5 text-left">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-5">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+                className="flex-1 text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-red-600/25 transition disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
