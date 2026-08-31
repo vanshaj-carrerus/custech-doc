@@ -48,6 +48,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const recruiterEmail = userSession?.email || "jane.doe@dochub.com";
   const docName = documentData?.name || "Commercial Lease Agreement 2026.pdf";
 
+  useEffect(() => {
+    const id = documentData?.id;
+    if (!id) return;
+    fetch(`/api/documents/track/${encodeURIComponent(id)}?event=view`).catch(() => {});
+  }, [documentData?.id]);
+
   // Initial placed fields — prefer the candidate's already-submitted values
   // (filledFields) so a refresh after completing shows what was actually signed,
   // falling back to the recruiter's blank placed fields for a not-yet-signed doc.

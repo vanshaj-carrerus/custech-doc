@@ -17,12 +17,34 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  Mail,
+  MailOpen,
 } from "lucide-react";
 
 interface DashboardViewProps {
   setActiveView: (view: ActiveView) => void;
   onSelectDoc?: (doc: ActiveDocument) => void;
   userSession?: UserSession;
+}
+
+function formatOpenTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function wasEmailOpened(doc: RecentDoc) {
+  return !!(doc.emailOpened || doc.emailOpenedAt || doc.lastEmailOpenedAt || doc.emailClickedAt);
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -42,14 +64,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   useEffect(() => {
     if (!userEmail) return;
 
-    fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.documents) {
-          setMongoDocs(data.documents);
-        }
-      })
-      .catch((err) => console.warn("MongoDB fetch notice:", err));
+    const loadDocs = () => {
+      fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.documents) {
+            setMongoDocs(data.documents);
+          }
+        })
+        .catch((err) => console.warn("MongoDB fetch notice:", err));
+    };
+
+    loadDocs();
+    const poll = window.setInterval(loadDocs, 10000);
 
     if (typeof window !== "undefined") {
       const savedCompleted = localStorage.getItem(`dochub_completed_${userEmail}`);
@@ -78,6 +105,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         } catch {}
       }
     }
+
+    return () => window.clearInterval(poll);
   }, [userEmail]);
 
   const defaultDocs: RecentDoc[] = mongoDocs;
@@ -248,6 +277,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           fileType: doc.fileType,
                           placedFields: doc.placedFields,
                           filledFields: doc.filledFields,
+                          recipientEmail: doc.recipientEmail,
+                          recipientName: doc.recipientName,
+                          emailOpened: wasEmailOpened(doc),
+                          emailOpenedAt: doc.emailOpenedAt || doc.lastEmailOpenedAt,
                         });
                       }
                       setActiveView("editor");
@@ -270,6 +303,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {doc.updatedAt}
                           </span>
+                          {doc.recipientEmail && (
+                            <>
+                              <span>•</span>
+                              <span className="truncate max-w-[160px]" title={doc.recipientEmail}>
+                                Sent to {doc.recipientEmail}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -281,9 +322,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </span>
                       )}
                       {(doc.status === "Pending" || doc.status === "Pending Sign") && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
-                          <Clock className="w-3.5 h-3.5 text-amber-600" /> Pending Sign
-                        </span>
+                        <>
+                          {wasEmailOpened(doc) ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-secondary/10 text-secondary border border-secondary/20"
+                              title={doc.emailOpenedAt ? `Opened ${formatOpenTime(doc.lastEmailOpenedAt || doc.emailOpenedAt)}` : "Opened"}
+                            >
+                              <MailOpen className="w-3.5 h-3.5" />
+                              Opened {formatOpenTime(doc.lastEmailOpenedAt || doc.emailOpenedAt)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                              <Mail className="w-3.5 h-3.5" />
+                              Not opened
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Pending Sign
+                          </span>
+                        </>
                       )}
                       {doc.status === "Draft" && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">

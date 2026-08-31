@@ -3,10 +3,19 @@ import { connectToDatabase } from "@/lib/db";
 import { DocumentRecord } from "@/models/Document";
 import { sendCandidateAgreementEmail } from "@/lib/email";
 
+const MONGO_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+function isAlreadySent(doc: { recipientEmail?: string; status?: string } | null) {
+  if (!doc) return false;
+  if (doc.status === "Pending Sign" || doc.status === "Completed") return true;
+  return !!doc.recipientEmail;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
+      documentId,
       name,
       size,
       pages,
@@ -29,23 +38,60 @@ export async function POST(request: Request) {
 
     let docRecord: any = null;
 
-    // 1. Try saving to MongoDB if available
     try {
       await connectToDatabase();
-      docRecord = await DocumentRecord.create({
-        name: name || "Document.pdf",
-        size: size || "1.2 MB",
-        pages: pages || 1,
-        fileUrl: fileUrl,
-        fileType: fileType,
-        senderEmail: senderEmail.toLowerCase(),
-        recipientEmail: recipientEmail.toLowerCase(),
-        recipientName: recipientName || recipientEmail,
-        subject: subject || "Signature Requested",
-        message: message || "",
-        placedFields: placedFields || [],
-        status: "Pending Sign",
-      });
+
+      if (documentId && MONGO_ID_RE.test(String(documentId))) {
+        const existing = await DocumentRecord.findById(documentId);
+        if (existing && isAlreadySent(existing)) {
+          return NextResponse.json(
+            {
+              success: false,
+              alreadySent: true,
+              recipientEmail: existing.recipientEmail,
+              recipientName: existing.recipientName,
+              message:
+                "This document was already sent. Upload a new document to send it to someone else.",
+            },
+            { status: 409 }
+          );
+        }
+        if (existing) {
+          existing.name = name || existing.name;
+          existing.size = size || existing.size;
+          existing.pages = pages || existing.pages;
+          existing.fileUrl = fileUrl || existing.fileUrl;
+          existing.fileType = fileType || existing.fileType;
+          existing.senderEmail = senderEmail.toLowerCase();
+          existing.recipientEmail = recipientEmail.toLowerCase();
+          existing.recipientName = recipientName || recipientEmail;
+          existing.subject = subject || existing.subject || "Signature Requested";
+          existing.message = message || existing.message || "";
+          existing.placedFields = placedFields || existing.placedFields || [];
+          existing.status = "Pending Sign";
+          existing.sentAt = new Date();
+          await existing.save();
+          docRecord = existing;
+        }
+      }
+
+      if (!docRecord) {
+        docRecord = await DocumentRecord.create({
+          name: name || "Document.pdf",
+          size: size || "1.2 MB",
+          pages: pages || 1,
+          fileUrl: fileUrl,
+          fileType: fileType,
+          senderEmail: senderEmail.toLowerCase(),
+          recipientEmail: recipientEmail.toLowerCase(),
+          recipientName: recipientName || recipientEmail,
+          subject: subject || "Signature Requested",
+          message: message || "",
+          placedFields: placedFields || [],
+          status: "Pending Sign",
+          sentAt: new Date(),
+        });
+      }
     } catch (dbErr) {
       console.warn("[MongoDB] Save warning (using fallback document ID):", dbErr);
     }
@@ -63,7 +109,6 @@ export async function POST(request: Request) {
       ? `${hostHeader.includes("localhost") ? "http" : "https"}://${hostHeader}`
       : process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
 
-    // 2. Send Email via Nodemailer (or generate active signing link)
     const emailResult = await sendCandidateAgreementEmail({
       senderEmail: finalSender,
       recipientEmail: finalRecipient,
@@ -91,7 +136,6 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error("Send Document error:", error);
-    // Never crash with 500, always return fallback candidate signing response
     const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
     const appBaseUrl = rawAppUrl.replace(/\/$/, "");
     return NextResponse.json({

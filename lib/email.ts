@@ -52,7 +52,14 @@ export async function sendCandidateAgreementEmail({
   baseUrl,
 }: SendCandidateEmailParams) {
   const domainBase = (baseUrl || APP_URL).replace(/\/$/, "");
+  const publicBase = APP_URL.replace(/\/$/, "");
   const signingUrl = `${domainBase}/sign/${docId}?candidate=${encodeURIComponent(recipientEmail)}`;
+  const trackedClickUrl = `${domainBase}/api/documents/track/${docId}?event=click&candidate=${encodeURIComponent(recipientEmail)}`;
+  const openPixelUrl = `${domainBase}/api/documents/track/${docId}?event=open`;
+  const publicPixelUrl =
+    publicBase && publicBase !== domainBase
+      ? `${publicBase}/api/documents/track/${docId}?event=open`
+      : "";
   const mailSubject = subject || `Signature Requested: ${docName}`;
 
   const htmlContent = `
@@ -76,19 +83,21 @@ export async function sendCandidateAgreementEmail({
         </div>
 
         <div style="text-align: center; margin: 0 0 24px 0;">
-          <a href="${signingUrl}" style="background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block;">
+          <a href="${trackedClickUrl}" style="background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block;">
             Review &amp; sign document
           </a>
         </div>
 
         <p style="font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.6; margin: 0;">
           Or copy this link into your browser:<br/>
-          <a href="${signingUrl}" style="color: #2563eb; word-break: break-all;">${signingUrl}</a>
+          <a href="${trackedClickUrl}" style="color: #2563eb; word-break: break-all;">${signingUrl}</a>
         </p>
       </div>
 
       <div style="border-top: 1px solid #e5e7eb; padding: 20px 32px; text-align: center;">
         <p style="margin: 0; font-size: 12px; color: #94a3b8;">Sent via CUS-DOC · 256-bit encrypted</p>
+        <img src="${openPixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;outline:none;" />
+        ${publicPixelUrl ? `<img src="${publicPixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;outline:none;" />` : ""}
       </div>
     </div>
   `;

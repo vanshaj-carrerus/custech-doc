@@ -14,6 +14,13 @@ export interface IDocumentRecord extends Document {
   placedFields?: any[];
   filledFields?: any[];
   status: "Draft" | "Processing" | "Pending Sign" | "Completed";
+  sentAt?: Date;
+  emailOpened?: boolean;
+  emailOpenedAt?: Date;
+  lastEmailOpenedAt?: Date;
+  emailOpenCount?: number;
+  emailClickedAt?: Date;
+  emailViewedAt?: Date;
   createdAt: Date;
 }
 
@@ -36,10 +43,21 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
       enum: ["Draft", "Processing", "Pending Sign", "Completed"],
       default: "Completed",
     },
+    sentAt: { type: Date },
+    emailOpened: { type: Boolean, default: false },
+    emailOpenedAt: { type: Date },
+    lastEmailOpenedAt: { type: Date },
+    emailOpenCount: { type: Number, default: 0 },
+    emailClickedAt: { type: Date },
+    emailViewedAt: { type: Date },
   },
   { timestamps: true }
 );
 
+const MODEL_NAME = "DocumentRecord";
+if (mongoose.models[MODEL_NAME]) {
+  delete mongoose.models[MODEL_NAME];
+}
+
 export const DocumentRecord: Model<IDocumentRecord> =
-  mongoose.models.DocumentRecord ||
-  mongoose.model<IDocumentRecord>("DocumentRecord", DocumentSchema);
+  mongoose.model<IDocumentRecord>(MODEL_NAME, DocumentSchema);

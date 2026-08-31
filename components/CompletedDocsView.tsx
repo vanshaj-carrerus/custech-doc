@@ -166,6 +166,8 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
                         fileType: doc.fileType,
                         placedFields: doc.placedFields,
                         filledFields: doc.filledFields || doc.placedFields,
+                        recipientEmail: doc.recipientEmail,
+                        recipientName: doc.recipientName,
                       });
                     }
                     setActiveView("editor");
@@ -213,6 +215,8 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
                             fileType: doc.fileType,
                             placedFields: doc.placedFields,
                             filledFields: doc.filledFields || doc.placedFields,
+                            recipientEmail: doc.recipientEmail,
+                            recipientName: doc.recipientName,
                           });
                         }
                         setActiveView("editor");

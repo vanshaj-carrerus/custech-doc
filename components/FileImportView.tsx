@@ -64,12 +64,14 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
           pages: targetFile.pages,
           fileUrl: dataUrl,
           fileType: targetFile.fileObject?.type || (targetFile.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image"),
+          status: "Draft",
         }
       : {
           id: "doc-imported",
           name: "Uploaded_Document_2026.pdf",
           size: "2.4 MB",
           pages: 1,
+          status: "Draft",
         };
 
     if (typeof window !== "undefined") {

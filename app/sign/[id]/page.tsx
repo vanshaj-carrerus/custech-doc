@@ -53,6 +53,8 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
         }
       })
       .catch((err) => console.warn("Doc fetch warning:", err));
+
+    fetch(`/api/documents/track/${encodeURIComponent(docId)}?event=view`).catch(() => {});
   }, [docId]);
 
   const userSession: UserSession = {

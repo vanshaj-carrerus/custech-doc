@@ -39,6 +39,8 @@ import {
   Move,
   Send,
   Loader2,
+  Mail,
+  MailOpen,
   Plus,
 } from "lucide-react";
 
@@ -46,6 +48,7 @@ interface PDFEditorViewProps {
   setActiveView: (view: ActiveView) => void;
   onOpenWalkthrough: () => void;
   onOpenSendModal?: () => void;
+  onCreateNewDocument?: () => void;
   documentData?: ActiveDocument;
 }
 
@@ -53,9 +56,46 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   setActiveView,
   onOpenWalkthrough,
   onOpenSendModal,
+  onCreateNewDocument,
   documentData,
 }) => {
-  const isCompletedDoc = documentData?.status === "Completed" || (typeof window !== "undefined" && (!documentData || !documentData.status) && !!localStorage.getItem("dochub_completed_fields"));
+  const isSignedComplete =
+    documentData?.status === "Completed" ||
+    (typeof window !== "undefined" &&
+      (!documentData || !documentData.status) &&
+      !!localStorage.getItem("dochub_completed_fields"));
+  const isPendingSent =
+    !isSignedComplete &&
+    (documentData?.status === "Pending Sign" || !!documentData?.recipientEmail);
+  const isCompletedDoc = isSignedComplete || isPendingSent;
+
+  const [emailOpened, setEmailOpened] = useState(!!documentData?.emailOpened);
+  const [emailOpenedAt, setEmailOpenedAt] = useState(documentData?.emailOpenedAt || "");
+
+  useEffect(() => {
+    setEmailOpened(!!documentData?.emailOpened);
+    setEmailOpenedAt(documentData?.emailOpenedAt || "");
+  }, [documentData?.id, documentData?.emailOpened, documentData?.emailOpenedAt]);
+
+  useEffect(() => {
+    if (!isPendingSent || !documentData?.id) return;
+
+    const loadOpenStatus = () => {
+      fetch(`/api/documents/list?id=${encodeURIComponent(documentData.id)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          const found = data.documents?.[0];
+          if (!found) return;
+          setEmailOpened(!!(found.emailOpened || found.emailOpenedAt || found.emailClickedAt));
+          setEmailOpenedAt(found.lastEmailOpenedAt || found.emailOpenedAt || "");
+        })
+        .catch(() => {});
+    };
+
+    loadOpenStatus();
+    const poll = window.setInterval(loadOpenStatus, 10000);
+    return () => window.clearInterval(poll);
+  }, [isPendingSent, documentData?.id]);
 
   // Paper canvas ref for position calculations
   const paperRef = useRef<HTMLDivElement>(null);
@@ -820,10 +860,23 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 }
                 if (onOpenSendModal) onOpenSendModal();
               }}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-emerald-600/30 transition transform hover:-translate-y-0.5 text-xs"
+              className="flex items-center gap-1.5 bg-secondary hover:bg-secondary/90 active:bg-secondary text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-secondary/30 transition transform hover:-translate-y-0.5 text-xs"
             >
               <Send className="w-4 h-4" />
               <span>Send Request</span>
+            </button>
+          )}
+
+          {isCompletedDoc && (
+            <button
+              onClick={() => {
+                if (onCreateNewDocument) onCreateNewDocument();
+                else setActiveView("import");
+              }}
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-primary/20 transition transform hover:-translate-y-0.5 text-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Document</span>
             </button>
           )}
 
@@ -937,10 +990,38 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           {/* Header Document Metadata Outside Paper Container */}
           <div className="w-[794px] max-w-full bg-white rounded-2xl border border-slate-300 p-4 md:p-5 shadow-sm flex justify-between items-center gap-4">
             <div className="min-w-0 flex-1">
-              {isCompletedDoc ? (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
+              {isSignedComplete ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
                   <Lock className="w-3.5 h-3.5" />
-                  <span>🔒 Completed & Legally Signed (Read-Only Locked)</span>
+                  <span>Completed & Legally Signed (Read-Only Locked)</span>
+                </div>
+              ) : isPendingSent ? (
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>
+                      Already sent to {documentData?.recipientEmail || "a candidate"} — upload a new document to send to someone else
+                    </span>
+                  </div>
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ml-2 ${
+                      emailOpened
+                        ? "bg-secondary/10 text-secondary border border-secondary/20"
+                        : "bg-slate-100 text-slate-500 border border-slate-200"
+                    }`}
+                  >
+                    {emailOpened ? (
+                      <>
+                        <MailOpen className="w-3.5 h-3.5" />
+                        <span>Email opened{emailOpenedAt ? ` · ${new Date(emailOpenedAt).toLocaleString()}` : ""}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Email not opened yet</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-red-600 font-bold text-xs uppercase tracking-widest mb-1">

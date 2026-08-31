@@ -41,6 +41,12 @@ export interface RecentDoc {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  recipientEmail?: string;
+  recipientName?: string;
+  emailOpened?: boolean;
+  emailOpenedAt?: string;
+  lastEmailOpenedAt?: string;
+  emailClickedAt?: string;
 }
 
 export interface ActiveDocument {
@@ -53,6 +59,10 @@ export interface ActiveDocument {
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
   status?: string;
+  recipientEmail?: string;
+  recipientName?: string;
+  emailOpened?: boolean;
+  emailOpenedAt?: string;
 }
 
 export interface UserSession {

@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const docs = await DocumentRecord.find(query).sort({ createdAt: -1 }).limit(50);
+    const docs = await DocumentRecord.find(query).sort({ createdAt: -1 }).limit(50).lean();
 
     return NextResponse.json({
       success: true,
@@ -54,6 +54,10 @@ export async function GET(request: Request) {
         fileType: d.fileType,
         placedFields: d.placedFields,
         filledFields: d.filledFields || d.placedFields,
+        emailOpened: !!(d.emailOpened || d.emailOpenedAt || d.emailClickedAt || d.emailViewedAt),
+        emailOpenedAt: d.emailOpenedAt ? new Date(d.emailOpenedAt).toISOString() : undefined,
+        lastEmailOpenedAt: d.lastEmailOpenedAt ? new Date(d.lastEmailOpenedAt).toISOString() : undefined,
+        emailClickedAt: d.emailClickedAt ? new Date(d.emailClickedAt).toISOString() : undefined,
       })),
     });
   } catch (error: any) {

@@ -156,6 +156,7 @@ export default function Home() {
               setActiveView={setActiveView}
               onOpenWalkthrough={() => setIsOnboardingOpen(true)}
               onOpenSendModal={() => setIsSendModalOpen(true)}
+              onCreateNewDocument={() => setActiveView("import")}
               documentData={activeDocument}
             />
           )}
@@ -178,6 +179,20 @@ export default function Home() {
         onClose={() => setIsSendModalOpen(false)}
         documentData={activeDocument}
         userSession={currentUserSession}
+        onSuccessSent={({ recipientEmail, recipientName, documentId }) => {
+          setActiveDocument((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  id: documentId || prev.id,
+                  status: "Pending Sign",
+                  recipientEmail,
+                  recipientName,
+                }
+              : prev
+          );
+        }}
+        onCreateNewDocument={() => setActiveView("import")}
         onOpenCandidatePortal={(candEmail) => {
           setCandidateEmail(candEmail);
           setActiveView("candidate_sign");

@@ -23,8 +23,13 @@ interface SendDocumentModalProps {
   onClose: () => void;
   documentData?: ActiveDocument;
   userSession?: UserSession;
-  onSuccessSent?: (recipientEmail: string, recipientName: string) => void;
+  onSuccessSent?: (payload: {
+    recipientEmail: string;
+    recipientName: string;
+    documentId?: string;
+  }) => void;
   onOpenCandidatePortal?: (candidateEmail: string) => void;
+  onCreateNewDocument?: () => void;
 }
 
 export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
@@ -34,6 +39,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
   userSession,
   onSuccessSent,
   onOpenCandidatePortal,
+  onCreateNewDocument,
 }) => {
   const [senderEmail, setSenderEmail] = useState(userSession?.email || "jane.doe@dochub.com");
 
@@ -56,6 +62,23 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sentInfo, setSentInfo] = useState<{ email: string; name: string } | null>(null);
+  const [alreadySentTo, setAlreadySentTo] = useState<string | null>(
+    documentData?.status === "Pending Sign" || documentData?.status === "Completed"
+      ? documentData.recipientEmail || "a candidate"
+      : documentData?.recipientEmail || null
+  );
+  const [sendError, setSendError] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (isSuccess) return;
+    const locked =
+      documentData?.status === "Pending Sign" ||
+      documentData?.status === "Completed" ||
+      !!documentData?.recipientEmail;
+    setAlreadySentTo(locked ? documentData?.recipientEmail || "a candidate" : null);
+    setSendError("");
+  }, [isOpen, isSuccess, documentData?.id, documentData?.status, documentData?.recipientEmail]);
 
   if (!isOpen) return null;
 
@@ -73,16 +96,18 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     if (!recipientEmail) return;
 
     setIsSending(true);
+    setSendError("");
 
     const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
     const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
     const activePlacedFields = documentData?.placedFields || (typeof window !== "undefined" ? (localStorage.getItem("dochub_placed_fields") ? JSON.parse(localStorage.getItem("dochub_placed_fields")!) : []) : []);
 
     try {
-      await fetch("/api/documents/send", {
+      const res = await fetch("/api/documents/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          documentId: documentData?.id,
           name: documentData?.name || "Agreement.pdf",
           size: documentData?.size || "1.2 MB",
           pages: documentData?.pages || 1,
@@ -96,15 +121,41 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           message: message,
         }),
       });
+      const data = await res.json();
+
+      if (data.alreadySent) {
+        setAlreadySentTo(data.recipientEmail || "a candidate");
+        setIsSending(false);
+        return;
+      }
+
+      if (!res.ok && !data.success) {
+        setSendError(data.message || "Could not send this document. Please try again.");
+        setIsSending(false);
+        return;
+      }
+
+      setIsSending(false);
+      setIsSuccess(true);
+      setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
+      if (onSuccessSent) {
+        onSuccessSent({
+          recipientEmail,
+          recipientName: recipientName || recipientEmail,
+          documentId: data.document?.id,
+        });
+      }
     } catch (error) {
       console.warn("MongoDB Document save warning:", error);
-    }
-
-    setIsSending(false);
-    setIsSuccess(true);
-    setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
-    if (onSuccessSent) {
-      onSuccessSent(recipientEmail, recipientName);
+      setIsSending(false);
+      setIsSuccess(true);
+      setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
+      if (onSuccessSent) {
+        onSuccessSent({
+          recipientEmail,
+          recipientName: recipientName || recipientEmail,
+        });
+      }
     }
   };
 
@@ -119,7 +170,13 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     setIsSending(false);
     setRecipientEmail("");
     setRecipientName("");
+    setSendError("");
     onClose();
+  };
+
+  const handleCreateNewDocument = () => {
+    handleResetAndClose();
+    onCreateNewDocument?.();
   };
 
   return (
@@ -136,7 +193,49 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        {!isSuccess ? (
+        {alreadySentTo ? (
+          <div className="text-center py-4 space-y-4 animate-in zoom-in-95">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600 mx-auto shadow-md">
+              <Lock className="w-8 h-8 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold mb-2">
+                <Lock className="w-3.5 h-3.5" /> Already sent
+              </div>
+              <h3 className="text-2xl font-extrabold text-slate-900">
+                This document is locked
+              </h3>
+              <p className="text-xs md:text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                It was already emailed to{" "}
+                <strong className="text-primary underline">{alreadySentTo}</strong>.
+                You cannot send the same document to anyone else.
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left text-xs max-w-sm mx-auto">
+              <p className="text-slate-600 leading-relaxed">
+                To send this file to another candidate, upload it again as a{" "}
+                <span className="font-bold text-slate-900">new document</span>. Each send is unique to one person.
+              </p>
+            </div>
+            <div className="pt-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleCreateNewDocument}
+                className="w-full bg-primary hover:bg-primary/90 text-white font-extrabold py-3 px-6 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs md:text-sm"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Upload a New Document</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleResetAndClose}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs"
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        ) : !isSuccess ? (
           <form onSubmit={handleSendSubmit} className="space-y-4">
             {/* Header Title */}
             <div className="flex items-center gap-3 pb-2 border-b border-slate-100">
@@ -149,6 +248,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
                 </h2>
                 <p className="text-xs text-slate-500">
                   Document: <span className="font-semibold text-slate-800">{documentData?.name || "Uploaded PDF"}</span>
+                  {" · "}
+                  <span className="text-amber-700 font-semibold">One candidate only — upload a new file to send to someone else.</span>
                 </p>
               </div>
             </div>
@@ -240,6 +341,12 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
               </div>
             </div>
 
+            {sendError && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                {sendError}
+              </p>
+            )}
+
             {/* Footer Buttons */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <button
@@ -253,7 +360,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
               <button
                 type="submit"
                 disabled={isSending || !recipientEmail}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs md:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md shadow-emerald-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
+                className="flex items-center gap-2 bg-secondary hover:bg-secondary/90 active:bg-secondary text-white text-xs md:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md shadow-secondary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
               >
                 {isSending ? (
                   <>
@@ -286,6 +393,15 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
               <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-sm mx-auto">
                 Dispatched from <span className="font-bold text-blue-600">{senderEmail}</span> directly to candidate email{" "}
                 <strong className="text-emerald-700 underline">{sentInfo?.email || recipientEmail}</strong>.
+              </p>
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-3 max-w-sm mx-auto flex items-start gap-2 text-left">
+                <Lock className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  This document is now locked to this candidate. To send the file to someone else, upload it as a new document.
+                </span>
+              </p>
+              <p className="text-[11px] text-primary bg-sky-50 border border-sky-100 rounded-xl px-3 py-2 mt-2 max-w-sm mx-auto text-left">
+                Watch the dashboard — it updates when they open the email or click the sign link.
               </p>
             </div>
 
@@ -361,6 +477,15 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
               >
                 Back to Dashboard / Editor
               </button>
+              {onCreateNewDocument && (
+                <button
+                  type="button"
+                  onClick={handleCreateNewDocument}
+                  className="w-full text-primary hover:text-primary/80 font-bold py-1 text-xs"
+                >
+                  Upload a new document to send to someone else
+                </button>
+              )}
             </div>
           </div>
         )}
