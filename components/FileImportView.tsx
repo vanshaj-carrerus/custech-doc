@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { ActiveView, UploadedFile, ActiveDocument } from "@/types/dochub";
 import { detectPdfPageCount } from "@/lib/pdfUtils";
+import { detectBlankFormFields, autoFillFromProfile } from "@/lib/detectFormFields";
 import {
   Upload,
   ChevronDown,
@@ -28,6 +29,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
   onImportComplete,
 }) => {
   const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -49,11 +51,31 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
     let dataUrl: string | undefined;
 
     if (targetFile?.fileObject) {
+      setImportStatus("Reading file...");
       dataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(targetFile.fileObject!);
       });
+    }
+
+    let detectedFields: ActiveDocument["placedFields"] = [];
+    if (detectFields && (dataUrl || targetFile?.fileObject)) {
+      setImportStatus("Finding blank spaces...");
+      try {
+        detectedFields = await detectBlankFormFields(dataUrl || targetFile!.fileObject!);
+        try {
+          const saved = localStorage.getItem("dochub_current_user");
+          const user = saved ? JSON.parse(saved) : null;
+          detectedFields = autoFillFromProfile(detectedFields, {
+            name: user?.name,
+            email: user?.email,
+          });
+        } catch {}
+      } catch (err) {
+        console.warn("Auto-detect fields warning:", err);
+        detectedFields = [];
+      }
     }
 
     const activeDoc: ActiveDocument = targetFile
@@ -65,6 +87,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
           fileUrl: dataUrl,
           fileType: targetFile.fileObject?.type || (targetFile.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image"),
           status: "Draft",
+          placedFields: detectedFields,
         }
       : {
           id: "doc-imported",
@@ -72,11 +95,12 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
           size: "2.4 MB",
           pages: 1,
           status: "Draft",
+          placedFields: detectedFields,
         };
 
     if (typeof window !== "undefined") {
       localStorage.removeItem("dochub_completed_fields");
-      localStorage.removeItem("dochub_placed_fields");
+      localStorage.setItem("dochub_placed_fields", JSON.stringify(detectedFields || []));
 
       if (activeDoc.fileUrl) {
         localStorage.setItem("dochub_pdf_data", activeDoc.fileUrl);
@@ -88,6 +112,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
       }
     }
 
+    setImportStatus("");
     setIsImporting(false);
 
     if (onImportComplete) {
@@ -458,12 +483,12 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
             <button
               onClick={handleStartImport}
               disabled={isImporting || files.length === 0}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs md:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md shadow-blue-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
+            className="flex items-center gap-2 bg-primary hover:bg-primary/90 active:bg-primary text-white text-xs md:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
             >
               {isImporting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Importing Files...</span>
+                  <span>{importStatus || "Importing Files..."}</span>
                 </>
               ) : (
                 <>

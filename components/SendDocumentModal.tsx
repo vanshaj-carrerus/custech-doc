@@ -68,6 +68,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       : documentData?.recipientEmail || null
   );
   const [sendError, setSendError] = useState("");
+  const [sheetCandidates, setSheetCandidates] = useState<{ candidateName: string }[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -79,6 +80,18 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     setAlreadySentTo(locked ? documentData?.recipientEmail || "a candidate" : null);
     setSendError("");
   }, [isOpen, isSuccess, documentData?.id, documentData?.status, documentData?.recipientEmail]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/candidates")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.candidates)) {
+          setSheetCandidates(data.candidates);
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -274,6 +287,26 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
                   </span>
                 </div>
               </div>
+
+              {sheetCandidates.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Candidate from Sheet
+                  </label>
+                  <select
+                    value={recipientName}
+                    onChange={(e) => setRecipientName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white transition"
+                  >
+                    <option value="">Select a candidate...</option>
+                    {sheetCandidates.map((c) => (
+                      <option key={c.candidateName} value={c.candidateName}>
+                        {c.candidateName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Candidate Recipient Email */}
               <div>

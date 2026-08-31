@@ -5,7 +5,7 @@
  * compressed object streams — i.e. most real-world PDFs).
  */
 
-const DEFAULT_PAGE_HEIGHT_PX = 1050;
+export const DEFAULT_PAGE_HEIGHT_PX = 1050;
 
 export type PdfLayoutInfo = {
   pageCount: number;
@@ -30,12 +30,12 @@ function getPdfjs() {
   return pdfjsLibPromise;
 }
 
-function isImageSource(dataUrlOrFile: string | File): boolean {
+export function isImageSource(dataUrlOrFile: string | File): boolean {
   if (dataUrlOrFile instanceof File) return dataUrlOrFile.type.startsWith("image/");
   return dataUrlOrFile.startsWith("data:image/");
 }
 
-async function toUint8Array(dataUrlOrFile: string | File): Promise<Uint8Array> {
+export async function toUint8Array(dataUrlOrFile: string | File): Promise<Uint8Array> {
   if (dataUrlOrFile instanceof File) {
     return new Uint8Array(await dataUrlOrFile.arrayBuffer());
   }
@@ -76,6 +76,10 @@ export async function getPdfLayoutInfo(
   } catch {
     return { pageCount: 1, pageHeightPx: DEFAULT_PAGE_HEIGHT_PX };
   }
+}
+
+export async function getPdfjsLib() {
+  return getPdfjs();
 }
 
 export function detectPdfPageCount(dataUrlOrFile: string | File): Promise<number> {

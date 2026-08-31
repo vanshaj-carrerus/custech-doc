@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
 import { getPdfLayoutInfo } from "@/lib/pdfUtils";
+import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
   FileText,
   CheckCircle2,
@@ -133,9 +134,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       setFields(documentData.filledFields);
     } else if (documentData?.placedFields && documentData.placedFields.length > 0) {
-      setFields(documentData.placedFields);
+      setFields(
+        autoFillFromProfile(documentData.placedFields, {
+          name: documentData.recipientName,
+          email: candidateEmail,
+        })
+      );
     }
-  }, [documentData?.id, documentData?.placedFields, documentData?.filledFields]);
+  }, [documentData?.id, documentData?.placedFields, documentData?.filledFields, documentData?.recipientName, candidateEmail]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
 
@@ -428,10 +434,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                   return (
                     <div
                       key={field.id}
-                      className={`absolute rounded flex flex-col justify-center p-1 transition-all ${
+                      className={`absolute rounded-sm flex flex-col justify-center p-1 ${
                         isCompleted
                           ? "border-0 bg-transparent pointer-events-none"
-                          : "border border-blue-300 bg-white/95 hover:bg-white shadow-xs hover:shadow-sm"
+                          : "border-0 bg-[#c7d2fe] hover:bg-[#a5b4fc] focus-within:bg-[#a5b4fc]"
                       }`}
                       style={{
                         left: `${field.x}%`,
@@ -459,7 +465,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             <button
                               type="button"
                               onClick={() => openSignatureModal(field.id)}
-                              className="w-full h-full flex items-center justify-between px-2 bg-emerald-50/90 hover:bg-emerald-100/90 text-emerald-900 border border-emerald-300 rounded font-serif italic font-bold text-xs transition"
+                              className="w-full h-full flex items-center justify-between px-2 text-slate-700 font-serif italic font-bold text-xs"
                             >
                               <span className="text-emerald-800 font-sans text-xs not-italic font-bold flex items-center gap-1 mx-auto">
                                 <PenTool className="w-3.5 h-3.5" /> Click to Draw Signature ✍️
@@ -582,7 +588,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   fileInput.click();
                                 }
                               }}
-                              className="w-full h-full flex items-center justify-center p-1 bg-slate-50/80 hover:bg-slate-100/90 cursor-pointer border border-dashed border-blue-400 rounded overflow-hidden"
+                              className="w-full h-full flex items-center justify-center p-1 cursor-pointer overflow-hidden"
                             >
                               {field.value ? (
                                 field.value.startsWith("data:image") ? (
@@ -610,8 +616,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             readOnly={isCompleted}
                             value={field.value || ""}
                             onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-                            placeholder={field.placeholder || `Fill ${field.label}...`}
-                            className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900"
+                            placeholder={
+                              field.placeholder && field.placeholder !== "Text Field"
+                                ? field.placeholder
+                                : field.label && field.label !== "Text Field"
+                                  ? field.label
+                                  : "Type here"
+                            }
+                            className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold"
                           />
                         )}
                       </div>

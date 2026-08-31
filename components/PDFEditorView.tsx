@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { ActiveView, DocumentField, ActiveDocument } from "@/types/dochub";
+import { ActiveView, DocumentField, ActiveDocument, UserSession } from "@/types/dochub";
 import { getPdfLayoutInfo } from "@/lib/pdfUtils";
+import { detectBlankFormFields, autoFillFromProfile } from "@/lib/detectFormFields";
 import {
   ArrowLeft,
   Grid,
@@ -41,6 +42,7 @@ import {
   Loader2,
   Mail,
   MailOpen,
+  Sparkles,
   Plus,
 } from "lucide-react";
 
@@ -50,6 +52,7 @@ interface PDFEditorViewProps {
   onOpenSendModal?: () => void;
   onCreateNewDocument?: () => void;
   documentData?: ActiveDocument;
+  userSession?: UserSession;
 }
 
 export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
@@ -58,6 +61,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   onOpenSendModal,
   onCreateNewDocument,
   documentData,
+  userSession,
 }) => {
   const isSignedComplete =
     documentData?.status === "Completed" ||
@@ -159,6 +163,12 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Placed interactive document fields on the A4 page
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
+    if (documentData?.filledFields && documentData.filledFields.length > 0) {
+      return documentData.filledFields;
+    }
+    if (Array.isArray(documentData?.placedFields)) {
+      return documentData.placedFields;
+    }
     if (typeof window !== "undefined") {
       const savedCompleted = localStorage.getItem("dochub_completed_fields");
       if (savedCompleted) {
@@ -173,72 +183,18 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         } catch {}
       }
     }
-    return [
-      {
-        id: "f-1",
-        type: "text",
-        label: "Text Field",
-        x: 8,
-        y: 10,
-        width: 260,
-        height: 34,
-        value: "",
-        placeholder: "Jane Doe (Client Representative)",
-        fontSize: 14,
-      },
-      {
-        id: "f-2",
-        type: "date",
-        label: "Date Signed",
-        x: 58,
-        y: 10,
-        width: 170,
-        height: 34,
-        value: new Date().toISOString().split("T")[0],
-        fontSize: 13,
-      },
-      {
-        id: "f-4",
-        type: "checkbox",
-        label: "Check",
-        x: 8,
-        y: 17,
-        width: 260,
-        height: 34,
-        value: "",
-        placeholder: "I accept the agreement terms",
-      },
-      {
-        id: "f-3",
-        type: "signature",
-        label: "Signature",
-        x: 58,
-        y: 17,
-        width: 220,
-        height: 42,
-        isLocked: true,
-      },
-    ];
+    return [];
   });
 
   useEffect(() => {
-    if (documentData) {
-      const targetFields =
-        documentData.filledFields && documentData.filledFields.length > 0
-          ? documentData.filledFields
-          : documentData.placedFields && documentData.placedFields.length > 0
-          ? documentData.placedFields
-          : null;
-
-      if (targetFields) {
-        const currentStr = JSON.stringify(placedFields);
-        const targetStr = JSON.stringify(targetFields);
-        if (currentStr !== targetStr) {
-          setPlacedFields(targetFields);
-        }
-      }
+    if (documentData?.filledFields && documentData.filledFields.length > 0) {
+      setPlacedFields(documentData.filledFields);
+      return;
     }
-  }, [documentData?.id, documentData?.filledFields, documentData?.placedFields]);
+    if (Array.isArray(documentData?.placedFields)) {
+      setPlacedFields(documentData.placedFields);
+    }
+  }, [documentData?.id]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && placedFields.length > 0) {
@@ -246,7 +202,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     }
   }, [placedFields]);
 
-  const [activeFieldId, setActiveFieldId] = useState<string | null>("f-1");
+  const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+  const [isDetectingBlanks, setIsDetectingBlanks] = useState(false);
+  const [sheetCandidates, setSheetCandidates] = useState<{ candidateName: string; employeeName: string }[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState("");
 
   // Document Building Blocks definition
   const buildingBlocks = [
@@ -299,6 +258,63 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           el?.scrollIntoView({ behavior: "smooth", block: "center" });
         });
       });
+    }
+  };
+
+  useEffect(() => {
+    fetch("/api/candidates")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.candidates)) {
+          setSheetCandidates(data.candidates);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleApplySheetCandidate = (name: string) => {
+    setSelectedCandidate(name);
+    if (!name) return;
+    setPlacedFields((prev) =>
+      autoFillFromProfile(
+        prev,
+        { name, email: userSession?.email },
+        { overwriteName: true }
+      )
+    );
+  };
+
+  const handleAutoDetectBlanks = async () => {
+    if (!activeFileUrl || isDetectingBlanks) return;
+    setIsDetectingBlanks(true);
+    try {
+      const found = await detectBlankFormFields(activeFileUrl);
+      const fillName = selectedCandidate || userSession?.name;
+      const filled = autoFillFromProfile(
+        found,
+        { name: fillName, email: userSession?.email },
+        { overwriteName: !!selectedCandidate }
+      );
+      setPlacedFields((prev) => {
+        const next = [...prev];
+        for (const field of filled) {
+          const already = next.some(
+            (p) => Math.abs(p.x - field.x) < 4 && Math.abs(p.y - field.y) < 2.4
+          );
+          if (!already) {
+            next.push({ ...field, id: `auto-${Date.now()}-${next.length}` });
+          }
+        }
+        return autoFillFromProfile(
+          next,
+          { name: fillName, email: userSession?.email },
+          { overwriteName: !!selectedCandidate }
+        );
+      });
+    } catch (err) {
+      console.warn("Auto-detect blanks failed:", err);
+    } finally {
+      setIsDetectingBlanks(false);
     }
   };
 
@@ -851,6 +867,38 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
         {/* Far Right Toolbar Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {!isCompletedDoc && sheetCandidates.length > 0 && (
+            <select
+              value={selectedCandidate}
+              onChange={(e) => handleApplySheetCandidate(e.target.value)}
+              className="max-w-[180px] text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary"
+              title="Pick a candidate from the Google Sheet"
+            >
+              <option value="">Sheet candidate...</option>
+              {sheetCandidates.map((c) => (
+                <option key={c.candidateName} value={c.candidateName}>
+                  {c.candidateName}
+                </option>
+              ))}
+            </select>
+          )}
+          {!isCompletedDoc && (
+            <button
+              type="button"
+              onClick={handleAutoDetectBlanks}
+              disabled={!activeFileUrl || isDetectingBlanks}
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-primary/20 transition transform hover:-translate-y-0.5 text-xs"
+              title="Find blank lines and add fillable fields on them"
+            >
+              {isDetectingBlanks ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              <span>{isDetectingBlanks ? "Filling fields..." : "Auto-fill fields"}</span>
+            </button>
+          )}
+
           {/* Prominent Send Request Button — hidden once the doc is already completed/signed */}
           {!isCompletedDoc && (
             <button
@@ -1123,12 +1171,12 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     key={field.id}
                     data-field-id={field.id}
                     onMouseDown={(e) => !isCompletedDoc && handleFieldMouseDown(field.id, e)}
-                    className={`absolute group/field transition-shadow rounded flex flex-col justify-center select-none ${
+                    className={`absolute group/field rounded-sm flex flex-col justify-center select-none ${
                       isCompletedDoc
                         ? "border-0 bg-transparent z-20 pointer-events-none"
                         : isActive
-                        ? "ring-2 ring-blue-500 bg-white border border-blue-500 z-30 shadow-lg"
-                        : "bg-white/95 hover:bg-white border border-blue-300 shadow-xs hover:shadow-sm z-10"
+                        ? "border-0 bg-[#a5b4fc] z-30"
+                        : "border-0 bg-[#c7d2fe] hover:bg-[#a5b4fc] z-10"
                     }`}
                     style={{
                       left: `${field.x}%`,
@@ -1346,8 +1394,14 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          placeholder={field.placeholder || "Type text..."}
-                          className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-900 ${
+                          placeholder={
+                            field.placeholder && field.placeholder !== "Text Field"
+                              ? field.placeholder
+                              : field.label && field.label !== "Text Field"
+                                ? field.label
+                                : "Type here"
+                          }
+                          className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold ${
                             field.isBold ? "font-bold" : "font-normal"
                           } ${field.isItalic ? "italic" : ""}`}
                           style={{
@@ -1365,8 +1419,14 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          placeholder={field.placeholder || "Type paragraph text..."}
-                          className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 resize-none text-slate-900 ${
+                          placeholder={
+                            field.placeholder && field.placeholder !== "Text Field"
+                              ? field.placeholder
+                              : field.label && field.label !== "Text Field"
+                                ? field.label
+                                : "Type here"
+                          }
+                          className={`w-full h-full bg-transparent border-0 focus:outline-none focus:ring-0 resize-none text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold ${
                             field.isBold ? "font-bold" : "font-normal"
                           } ${field.isItalic ? "italic" : ""}`}
                           style={{
@@ -1380,7 +1440,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          className="w-full h-full flex items-center justify-between px-2 bg-blue-50/30 cursor-pointer"
+                          className="w-full h-full flex items-center justify-between px-2 cursor-pointer"
                         >
                           {field.value && field.value.startsWith("data:image") ? (
                             <img
@@ -1494,7 +1554,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             e.stopPropagation();
                             setActiveFieldId(field.id);
                           }}
-                          className="w-full h-full flex items-center justify-between gap-1 px-1.5 border border-slate-300 rounded bg-slate-50/60 cursor-pointer"
+                          className="w-full h-full flex items-center justify-between gap-1 px-1.5 cursor-pointer"
                         >
                           <span
                             className="truncate text-slate-700 font-semibold"
@@ -1529,7 +1589,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                               fileInput.click();
                             }
                           }}
-                          className="w-full h-full flex items-center justify-center p-1 bg-slate-50/80 hover:bg-slate-100/90 cursor-move border border-dashed border-blue-400 rounded overflow-hidden select-none"
+                          className="w-full h-full flex items-center justify-center p-1 cursor-move overflow-hidden select-none"
                         >
                           {field.value ? (
                             field.value.startsWith("data:image") ? (
@@ -1614,11 +1674,11 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                       </div>
                     )}
 
-                    {/* Right Edge Handle (Width Resize) */}
+                    {/* Right Edge Handle (Width Resize) — invisible so the fill box has no border */}
                     {isActive && !isCompletedDoc && (
                       <div
                         onMouseDown={(e) => handleResizeWidthMouseDown(field.id, e)}
-                        className="resize-handle absolute top-0 bottom-0 -right-1.5 w-3 bg-blue-600 hover:bg-blue-700 rounded-r cursor-ew-resize flex items-center justify-center z-40"
+                        className="resize-handle absolute top-0 bottom-0 -right-1 w-3 bg-transparent cursor-ew-resize z-40"
                         title="Drag right edge to change width"
                       />
                     )}
@@ -1627,7 +1687,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     {isActive && !isCompletedDoc && (
                       <div
                         onMouseDown={(e) => handleResizeHeightMouseDown(field.id, e)}
-                        className="resize-handle absolute left-0 right-0 -bottom-1.5 h-3 bg-blue-600 hover:bg-blue-700 rounded-b cursor-ns-resize flex items-center justify-center z-40"
+                        className="resize-handle absolute left-0 right-0 -bottom-1 h-3 bg-transparent cursor-ns-resize z-40"
                         title="Drag bottom edge to change height"
                       />
                     )}
@@ -1636,7 +1696,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     {isActive && !isCompletedDoc && (
                       <div
                         onMouseDown={(e) => handleResizeBothMouseDown(field.id, e)}
-                        className="resize-handle absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-blue-700 hover:bg-blue-800 rounded-full border-2 border-white cursor-nwse-resize z-50 shadow-sm"
+                        className="resize-handle absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-400/80 hover:bg-indigo-500 rounded-sm cursor-nwse-resize z-50"
                         title="Drag corner to change both width & height"
                       />
                     )}
