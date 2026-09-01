@@ -415,13 +415,24 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const startY = e.clientY;
     const startFieldX = targetField.x;
     const startFieldY = targetField.y;
+    const zoomScale = zoomLevel / 100;
+    const paperWidth = paperRect.width / zoomScale;
+    const paperHeight = paperRect.height / zoomScale;
+    const maxX = Math.max(
+      0,
+      100 - ((targetField.width || 200) / paperWidth) * 100
+    );
+    const maxY = Math.max(
+      0,
+      100 - ((targetField.height || 34) / paperHeight) * 100
+    );
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = ((moveEvent.clientX - startX) / paperRect.width) * 100;
       const deltaY = ((moveEvent.clientY - startY) / paperRect.height) * 100;
 
-      const newX = Math.max(0, Math.min(88, startFieldX + deltaX));
-      const newY = Math.max(0, Math.min(94, startFieldY + deltaY));
+      const newX = Math.max(0, Math.min(maxX, startFieldX + deltaX));
+      const newY = Math.max(0, Math.min(maxY, startFieldY + deltaY));
 
       setPlacedFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, x: newX, y: newY } : f))
