@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { ActiveView, UploadedFile, ActiveDocument } from "@/types/dochub";
 import { detectPdfPageCount } from "@/lib/pdfUtils";
-import { detectBlankFormFields, autoFillFromProfile } from "@/lib/detectFormFields";
 import {
   Upload,
   ChevronDown,
@@ -34,7 +33,6 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
   const [showDropdown, setShowDropdown] = useState(false);
 
   // Options toggles
-  const [detectFields, setDetectFields] = useState(true);
   const [enableOcr, setEnableOcr] = useState(false);
   const [compressPdf, setCompressPdf] = useState(true);
 
@@ -59,24 +57,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
       });
     }
 
-    let detectedFields: ActiveDocument["placedFields"] = [];
-    if (detectFields && (dataUrl || targetFile?.fileObject)) {
-      setImportStatus("Finding blank spaces...");
-      try {
-        detectedFields = await detectBlankFormFields(dataUrl || targetFile!.fileObject!);
-        try {
-          const saved = localStorage.getItem("dochub_current_user");
-          const user = saved ? JSON.parse(saved) : null;
-          detectedFields = autoFillFromProfile(detectedFields, {
-            name: user?.name,
-            email: user?.email,
-          });
-        } catch {}
-      } catch (err) {
-        console.warn("Auto-detect fields warning:", err);
-        detectedFields = [];
-      }
-    }
+    const detectedFields: ActiveDocument["placedFields"] = [];
 
     const activeDoc: ActiveDocument = targetFile
       ? {
@@ -99,16 +80,23 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
         };
 
     if (typeof window !== "undefined") {
-      localStorage.removeItem("dochub_completed_fields");
-      localStorage.setItem("dochub_placed_fields", JSON.stringify(detectedFields || []));
+      // The PDF itself stays in activeDocument state. Base64 PDFs can easily
+      // exceed the 5–10 MB Web Storage quota and previously stopped imports.
+      localStorage.removeItem("dochub_pdf_data");
+      sessionStorage.removeItem("dochub_active_fileUrl");
 
-      if (activeDoc.fileUrl) {
-        localStorage.setItem("dochub_pdf_data", activeDoc.fileUrl);
+      try {
+        localStorage.removeItem("dochub_completed_fields");
+        localStorage.setItem("dochub_placed_fields", JSON.stringify(detectedFields || []));
         localStorage.setItem("dochub_pdf_type", activeDoc.fileType || "application/pdf");
         localStorage.setItem("dochub_pdf_name", activeDoc.name);
-        sessionStorage.setItem("dochub_active_fileUrl", activeDoc.fileUrl);
-        sessionStorage.setItem("dochub_active_fileType", activeDoc.fileType || "application/pdf");
+        sessionStorage.setItem(
+          "dochub_active_fileType",
+          activeDoc.fileType || "application/pdf"
+        );
         sessionStorage.setItem("dochub_active_name", activeDoc.name);
+      } catch (error) {
+        console.warn("Document metadata cache was skipped:", error);
       }
     }
 
@@ -415,24 +403,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
             </button>
 
             {showOptions && (
-              <div className="p-4 pt-2 border-t border-slate-200/80 bg-white grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
-                  <input
-                    type="checkbox"
-                    checked={detectFields}
-                    onChange={(e) => setDetectFields(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <div>
-                    <span className="font-semibold text-slate-800 block">
-                      Auto-detect Form Fields
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      Convert blank lines into editable inputs
-                    </span>
-                  </div>
-                </label>
-
+              <div className="p-4 pt-2 border-t border-slate-200/80 bg-white grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
                   <input
                     type="checkbox"

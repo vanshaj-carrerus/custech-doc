@@ -2,8 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveView, DocumentField, ActiveDocument, UserSession } from "@/types/dochub";
-import { getPdfLayoutInfo } from "@/lib/pdfUtils";
-import { detectBlankFormFields, autoFillFromProfile } from "@/lib/detectFormFields";
+import { getPdfLayoutInfo, getPdfjsLib, toUint8Array } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
   Grid,
@@ -42,7 +41,6 @@ import {
   Loader2,
   Mail,
   MailOpen,
-  Sparkles,
   Plus,
 } from "lucide-react";
 
@@ -160,6 +158,57 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
   const docTitle = documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") : null) || "Document.pdf";
   const isImageDoc = !!(activeFileType?.includes("image") || activeFileUrl?.startsWith("data:image/"));
+  const [renderedPdfPages, setRenderedPdfPages] = useState<string[]>([]);
+  const [isRenderingPdf, setIsRenderingPdf] = useState(false);
+
+  useEffect(() => {
+    if (!activeFileUrl || isImageDoc) {
+      setRenderedPdfPages([]);
+      setIsRenderingPdf(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRenderedPdfPages([]);
+    setIsRenderingPdf(true);
+
+    const renderPages = async () => {
+      try {
+        const [pdfjsLib, bytes] = await Promise.all([
+          getPdfjsLib(),
+          toUint8Array(activeFileUrl),
+        ]);
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const images: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          if (cancelled) return;
+          const page = await pdf.getPage(pageNumber);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({ scale: 794 / baseViewport.width });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const context = canvas.getContext("2d");
+          if (!context) continue;
+
+          await page.render({ canvas, canvasContext: context, viewport }).promise;
+          images.push(canvas.toDataURL("image/jpeg", 0.92));
+        }
+
+        if (!cancelled) setRenderedPdfPages(images);
+      } catch (error) {
+        console.warn("PDF editor rendering failed:", error);
+      } finally {
+        if (!cancelled) setIsRenderingPdf(false);
+      }
+    };
+
+    void renderPages();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFileUrl, isImageDoc]);
 
   // Placed interactive document fields on the A4 page
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
@@ -192,9 +241,19 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       return;
     }
     if (Array.isArray(documentData?.placedFields)) {
-      setPlacedFields(documentData.placedFields);
+      setPlacedFields(
+        documentData.status === "Draft"
+          ? documentData.placedFields.filter((field) => !field.id.startsWith("auto-"))
+          : documentData.placedFields
+      );
     }
-  }, [documentData?.id]);
+  }, [documentData?.id, documentData?.status]);
+
+  useEffect(() => {
+    if (documentData?.status === "Draft") {
+      setPlacedFields((fields) => fields.filter((field) => !field.id.startsWith("auto-")));
+    }
+  }, [documentData?.id, documentData?.status]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && placedFields.length > 0) {
@@ -203,7 +262,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   }, [placedFields]);
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
-  const [isDetectingBlanks, setIsDetectingBlanks] = useState(false);
 
   // Document Building Blocks definition
   const buildingBlocks = [
@@ -256,37 +314,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           el?.scrollIntoView({ behavior: "smooth", block: "center" });
         });
       });
-    }
-  };
-
-  const handleAutoDetectBlanks = async () => {
-    if (!activeFileUrl || isDetectingBlanks) return;
-    setIsDetectingBlanks(true);
-    try {
-      const found = await detectBlankFormFields(activeFileUrl);
-      const filled = autoFillFromProfile(found, {
-        name: userSession?.name,
-        email: userSession?.email,
-      });
-      setPlacedFields((prev) => {
-        const next = [...prev];
-        for (const field of filled) {
-          const already = next.some(
-            (p) => Math.abs(p.x - field.x) < 4 && Math.abs(p.y - field.y) < 2.4
-          );
-          if (!already) {
-            next.push({ ...field, id: `auto-${Date.now()}-${next.length}` });
-          }
-        }
-        return autoFillFromProfile(next, {
-          name: userSession?.name,
-          email: userSession?.email,
-        });
-      });
-    } catch (err) {
-      console.warn("Auto-detect blanks failed:", err);
-    } finally {
-      setIsDetectingBlanks(false);
     }
   };
 
@@ -839,23 +866,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
         {/* Far Right Toolbar Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {!isCompletedDoc && (
-            <button
-              type="button"
-              onClick={handleAutoDetectBlanks}
-              disabled={!activeFileUrl || isDetectingBlanks}
-              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-primary/20 transition transform hover:-translate-y-0.5 text-xs"
-              title="Find blank lines and add fillable fields on them"
-            >
-              {isDetectingBlanks ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              <span>{isDetectingBlanks ? "Filling fields..." : "Auto-fill fields"}</span>
-            </button>
-          )}
-
           {/* Prominent Send Request Button — hidden once the doc is already completed/signed */}
           {!isCompletedDoc && (
             <button
@@ -1084,6 +1094,25 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                           alt={docTitle}
                           className="w-full h-auto block select-none pointer-events-none"
                         />
+                      </div>
+                    ) : renderedPdfPages.length > 0 ? (
+                      <div className="relative z-0 w-full bg-white">
+                        {renderedPdfPages.map((pageImage, index) => (
+                          <img
+                            key={`${index}-${pageImage.length}`}
+                            src={pageImage}
+                            alt={`${docTitle} – page ${index + 1}`}
+                            className="block h-auto w-full select-none pointer-events-none"
+                          />
+                        ))}
+                      </div>
+                    ) : isRenderingPdf ? (
+                      <div
+                        className="flex w-full items-center justify-center gap-2 bg-white text-sm font-semibold text-slate-500"
+                        style={{ minHeight: `${Math.min(500, iframeHeightPx)}px` }}
+                      >
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <span>Rendering document...</span>
                       </div>
                     ) : (
                       <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
