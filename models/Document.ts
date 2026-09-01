@@ -21,6 +21,10 @@ export interface IDocumentRecord extends Document {
   emailOpenCount?: number;
   emailClickedAt?: Date;
   emailViewedAt?: Date;
+  reminderCount?: number;
+  lastReminderAt?: Date;
+  automaticReminderSentAt?: Date;
+  automaticReminderClaimedAt?: Date;
   createdAt: Date;
 }
 
@@ -50,6 +54,10 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     emailOpenCount: { type: Number, default: 0 },
     emailClickedAt: { type: Date },
     emailViewedAt: { type: Date },
+    reminderCount: { type: Number, default: 0 },
+    lastReminderAt: { type: Date },
+    automaticReminderSentAt: { type: Date },
+    automaticReminderClaimedAt: { type: Date },
   },
   { timestamps: true }
 );

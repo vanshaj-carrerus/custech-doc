@@ -58,6 +58,11 @@ export async function GET(request: Request) {
         emailOpenedAt: d.emailOpenedAt ? new Date(d.emailOpenedAt).toISOString() : undefined,
         lastEmailOpenedAt: d.lastEmailOpenedAt ? new Date(d.lastEmailOpenedAt).toISOString() : undefined,
         emailClickedAt: d.emailClickedAt ? new Date(d.emailClickedAt).toISOString() : undefined,
+        reminderCount: d.reminderCount || 0,
+        lastReminderAt: d.lastReminderAt ? new Date(d.lastReminderAt).toISOString() : undefined,
+        automaticReminderSentAt: d.automaticReminderSentAt
+          ? new Date(d.automaticReminderSentAt).toISOString()
+          : undefined,
       })),
     });
   } catch (error: any) {

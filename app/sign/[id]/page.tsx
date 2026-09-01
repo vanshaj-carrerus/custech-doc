@@ -29,7 +29,7 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
 
   useEffect(() => {
     // Optionally fetch document from MongoDB API by ID
-    fetch(`/api/documents/list?id=${encodeURIComponent(docId)}`)
+    fetch(`/api/documents?id=${encodeURIComponent(docId)}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.documents && data.documents.length > 0) {

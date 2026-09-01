@@ -5,6 +5,10 @@ const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASS || "";
 const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
 const APP_URL = rawAppUrl.replace(/\/$/, "");
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // Direct Nodemailer Gmail Service Transporter
 export function getTransporter() {
   if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
@@ -113,13 +117,68 @@ export async function sendCandidateAgreementEmail({
     });
     console.log(`[Nodemailer] Agreement link email sent to candidate: ${recipientEmail} (Msg ID: ${info.messageId})`);
     return { success: true, messageId: info.messageId, signingUrl };
-  } catch (error: any) {
-    console.warn(`[Nodemailer] Email delivery warning:`, error.message || error);
+  } catch (error: unknown) {
+    console.warn(`[Nodemailer] Email delivery warning:`, getErrorMessage(error));
     return { success: true, simulated: true, signingUrl };
   }
 }
 
-// 2. Send Completed Agreement Email to BOTH Candidate & Logged-in Recruiter Gmail
+export async function sendCandidateReminderEmail({
+  senderEmail,
+  recipientEmail,
+  recipientName,
+  docName,
+  docId,
+}: {
+  senderEmail: string;
+  recipientEmail: string;
+  recipientName?: string;
+  docName: string;
+  docId: string;
+}) {
+  const signingUrl = `${APP_URL}/api/documents/track/${docId}?event=click&candidate=${encodeURIComponent(recipientEmail)}`;
+  const openPixelUrl = `${APP_URL}/api/documents/track/${docId}?event=open`;
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+      <div style="padding:24px 30px; background:#f0f9ff; border-bottom:1px solid #bae6fd;">
+        <p style="margin:0; color:#0284c7; font-size:18px; font-weight:800;">CUS-DOC Reminder</p>
+      </div>
+      <div style="padding:30px;">
+        <p style="margin:0 0 16px; color:#0f172a; font-size:14px;">Hello ${recipientName || "there"},</p>
+        <p style="margin:0 0 20px; color:#475569; font-size:14px; line-height:1.6;">
+          This is a reminder from <strong style="color:#0f172a;">${senderEmail}</strong>. Your document is still waiting to be reviewed and completed.
+        </p>
+        <div style="padding:14px 16px; margin-bottom:24px; background:#f8fafc; border-radius:8px; color:#0f172a; font-size:14px; font-weight:700;">
+          ${docName}
+        </div>
+        <div style="text-align:center;">
+          <a href="${signingUrl}" style="display:inline-block; padding:12px 26px; color:#ffffff; background:#059669; border-radius:8px; text-decoration:none; font-size:14px; font-weight:700;">
+            Review &amp; complete document
+          </a>
+        </div>
+        <img src="${openPixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;" />
+      </div>
+    </div>
+  `;
+
+  try {
+    const transporter = getTransporter();
+    const info = await transporter.sendMail({
+      from: `CUS-DOC Platform <${EMAIL_USER || senderEmail}>`,
+      to: recipientEmail,
+      replyTo: senderEmail,
+      subject: `Reminder: Please complete ${docName}`,
+      html: htmlContent,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    console.warn("[Nodemailer] Reminder delivery failed:", message);
+    return { success: false, message };
+  }
+}
+
+// 3. Send Completed Agreement Email to BOTH Candidate & Logged-in Recruiter Gmail
 export async function sendCompletedAgreementEmail({
   senderEmail,
   recipientEmail,
@@ -178,8 +237,8 @@ export async function sendCompletedAgreementEmail({
     });
     console.log(`[Nodemailer] Completed agreement email sent to both ${recipientEmail} and ${senderEmail}`);
     return { success: true, messageId: info.messageId };
-  } catch (error: any) {
-    console.warn(`[Nodemailer] Completed email delivery warning:`, error.message || error);
+  } catch (error: unknown) {
+    console.warn(`[Nodemailer] Completed email delivery warning:`, getErrorMessage(error));
     return { success: true, simulated: true };
   }
 }

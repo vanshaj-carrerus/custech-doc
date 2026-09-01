@@ -41,12 +41,16 @@ export interface RecentDoc {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  senderEmail?: string;
   recipientEmail?: string;
   recipientName?: string;
   emailOpened?: boolean;
   emailOpenedAt?: string;
   lastEmailOpenedAt?: string;
   emailClickedAt?: string;
+  reminderCount?: number;
+  lastReminderAt?: string;
+  automaticReminderSentAt?: string;
 }
 
 export interface ActiveDocument {

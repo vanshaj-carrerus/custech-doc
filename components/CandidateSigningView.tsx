@@ -2,7 +2,11 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
-import { getPdfLayoutInfo } from "@/lib/pdfUtils";
+import {
+  getPdfLayoutInfo,
+  getPdfjsLib,
+  toUint8Array,
+} from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
   FileText,
@@ -176,6 +180,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
+  const [renderedPdfPages, setRenderedPdfPages] = useState<string[]>([]);
+  const [isRenderingPdf, setIsRenderingPdf] = useState(false);
 
   useEffect(() => {
     if (activeFileUrl) {
@@ -191,8 +197,79 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const pageHeightPx = detectedPageHeightPx || 1050;
   const containerMinHeightPx = pageCount * pageHeightPx;
-  const iframeHeightPx = containerMinHeightPx;
   const isImageDoc = !!(activeFileType?.includes("image") || activeFileUrl?.startsWith("data:image/"));
+  const documentViewportRef = useRef<HTMLDivElement | null>(null);
+  const [documentWidth, setDocumentWidth] = useState(794);
+
+  useEffect(() => {
+    if (!activeFileUrl || isImageDoc) {
+      setRenderedPdfPages([]);
+      setIsRenderingPdf(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRenderedPdfPages([]);
+    setIsRenderingPdf(true);
+
+    const renderPages = async () => {
+      try {
+        const [pdfjsLib, bytes] = await Promise.all([
+          getPdfjsLib(),
+          toUint8Array(activeFileUrl),
+        ]);
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const images: string[] = [];
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          if (cancelled) return;
+          const page = await pdf.getPage(pageNumber);
+          const initialViewport = page.getViewport({ scale: 1 });
+          const renderScale = 794 / initialViewport.width;
+          const viewport = page.getViewport({ scale: renderScale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const context = canvas.getContext("2d");
+          if (!context) continue;
+
+          await page.render({
+            canvasContext: context,
+            viewport,
+            canvas,
+          }).promise;
+          images.push(canvas.toDataURL("image/jpeg", 0.9));
+        }
+
+        if (!cancelled) setRenderedPdfPages(images);
+      } catch (error) {
+        console.warn("Responsive PDF rendering failed:", error);
+      } finally {
+        if (!cancelled) setIsRenderingPdf(false);
+      }
+    };
+
+    renderPages();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFileUrl, isImageDoc]);
+
+  useEffect(() => {
+    const viewport = documentViewportRef.current;
+    if (!viewport) return;
+
+    const updateWidth = () => {
+      setDocumentWidth(Math.min(794, viewport.clientWidth || 794));
+    };
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(viewport);
+    updateWidth();
+    return () => observer.disconnect();
+  }, []);
+
+  const documentScale = Math.min(1, documentWidth / 794);
+  const iframeHeightPx = containerMinHeightPx * documentScale;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
     setFields((prev) =>
@@ -324,8 +401,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       {/* Top Navbar */}
-      <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between sticky top-0 z-40 shadow-xs">
-        <div className="flex items-center gap-3">
+      <header className="min-h-16 bg-white border-b border-slate-200 px-3 py-3 md:px-8 flex items-center justify-between gap-2 sticky top-0 z-40 shadow-xs">
+        <div className="flex items-center gap-2 min-w-0">
           {!standalone && (
             <>
               <button
@@ -333,32 +410,33 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition flex items-center gap-1.5 text-xs font-bold"
               >
                 <ArrowLeft className="w-4 h-4 text-blue-600" />
-                <span>Dashboard</span>
+                <span className="hidden sm:inline">Dashboard</span>
               </button>
               <div className="h-4 w-[1px] bg-slate-200"></div>
             </>
           )}
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
-            <span className="font-extrabold text-sm text-slate-900 truncate max-w-xs md:max-w-md">
+            <span className="font-extrabold text-xs sm:text-sm text-slate-900 truncate max-w-[55vw] sm:max-w-xs md:max-w-md">
               {activeDocName}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {isCompleted ? (
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full text-xs font-extrabold shadow-2xs">
+              <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary border border-secondary/20 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-extrabold shadow-2xs">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>🔒 Executed & E-Signed Document</span>
+                <span className="hidden sm:inline">Executed & E-Signed Document</span>
+                <span className="sm:hidden">Signed</span>
               </span>
               <button
                 onClick={() => window.print()}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
               >
                 <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>Print PDF</span>
+                <span className="hidden sm:inline">Print PDF</span>
               </button>
             </div>
           ) : (
@@ -371,15 +449,15 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       </header>
 
       {/* Main Workspace Area (Clean PDF Display) */}
-      <div className="flex-1 p-4 md:p-8 flex justify-center overflow-x-auto overflow-y-auto bg-slate-200/80">
+      <div className="flex-1 p-2 sm:p-4 md:p-8 flex justify-center overflow-x-hidden overflow-y-auto bg-slate-200/80">
         <div className="w-full max-w-4xl flex flex-col items-center space-y-6">
           {/* Document Paper Canvas */}
-          <div className="relative bg-slate-300 p-2 md:p-6 rounded-3xl shadow-2xl flex justify-center border border-slate-300 overflow-x-auto">
+          <div className="relative w-full min-w-0 max-w-[842px] bg-slate-300 p-1 sm:p-2 md:p-6 rounded-xl md:rounded-3xl shadow-xl md:shadow-2xl flex justify-center border border-slate-300 overflow-hidden">
             <div
-              className="relative bg-white text-slate-900 shadow-2xl border border-slate-300 rounded-lg overflow-hidden transition-all duration-200 flex-shrink-0"
+              ref={documentViewportRef}
+              className="relative w-full min-w-0 max-w-[794px] bg-white text-slate-900 shadow-xl md:shadow-2xl border border-slate-300 rounded-sm md:rounded-lg overflow-hidden transition-all duration-200"
               style={{
-                width: "794px",
-                minHeight: "auto",
+                minHeight: activeFileUrl && isImageDoc ? "auto" : `${iframeHeightPx}px`,
               }}
             >
                 {/* Embed actual uploaded document preview if fileUrl exists */}
@@ -392,12 +470,31 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                         className="w-full h-auto block select-none pointer-events-none"
                       />
                     </div>
+                  ) : renderedPdfPages.length > 0 ? (
+                    <div className="relative w-full z-0 bg-white">
+                      {renderedPdfPages.map((pageImage, index) => (
+                        <img
+                          key={`${index}-${pageImage.length}`}
+                          src={pageImage}
+                          alt={`${activeDocName} – page ${index + 1}`}
+                          className="block h-auto w-full max-w-full select-none pointer-events-none"
+                        />
+                      ))}
+                    </div>
+                  ) : isRenderingPdf ? (
+                    <div
+                      className="flex w-full items-center justify-center gap-2 bg-white text-sm font-semibold text-slate-500"
+                      style={{ minHeight: `${Math.min(500, iframeHeightPx)}px` }}
+                    >
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <span>Fitting agreement to your screen...</span>
+                    </div>
                   ) : (
                     <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
                       <iframe
-                        src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
+                        src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
                         title={activeDocName}
-                        className="w-full border-0 pointer-events-none block"
+                        className="w-full min-w-0 border-0 pointer-events-none block"
                         style={{ width: "100%", height: `${iframeHeightPx}px`, border: 0, margin: 0, padding: 0 }}
                       />
                     </div>
@@ -442,8 +539,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       style={{
                         left: `${field.x}%`,
                         top: `${field.y}%`,
-                        width: `${fieldWidth}px`,
-                        height: `${fieldHeight}px`,
+                        width: `${Math.max(36, fieldWidth * documentScale)}px`,
+                        height: `${Math.max(24, fieldHeight * documentScale)}px`,
                       }}
                     >
                       {/* Interactive Inputs */}
@@ -636,7 +733,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
           {/* Actions Bar below canvas */}
           {!isCompleted && (
-            <div className={`w-full max-w-[794px] bg-white border border-slate-200 rounded-2xl p-4 flex items-center shadow-sm ${standalone ? "justify-end" : "justify-between"}`}>
+            <div className={`sticky bottom-2 z-30 w-full max-w-[794px] bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 sm:p-4 flex items-center shadow-lg ${standalone ? "justify-end" : "justify-between"}`}>
               {!standalone && (
                 <button
                   type="button"
@@ -651,7 +748,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 type="button"
                 onClick={handleCompleteSigning}
                 disabled={isSubmitting || !allFieldsFilled}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-xs md:text-sm px-8 py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/90 active:bg-secondary text-white font-extrabold text-xs md:text-sm px-4 sm:px-8 py-3 rounded-xl shadow-lg shadow-secondary/30 transition transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>
@@ -661,7 +758,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>Complete & Send Copies to Gmail Accounts</span>
+                    <span className="sm:hidden">Complete & Send</span>
+                    <span className="hidden sm:inline">Complete & Send Copies to Gmail Accounts</span>
                   </>
                 )}
               </button>
@@ -672,13 +770,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
       {/* Draw Signature Modal */}
       {isSigModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 text-white rounded-3xl w-full max-w-lg shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[96dvh] overflow-y-auto shadow-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 animate-in zoom-in-95">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <PenTool className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-lg font-extrabold text-white">
+                <h3 className="text-base sm:text-lg font-extrabold text-white">
                   Add Candidate Digital Signature
                 </h3>
               </div>
@@ -721,8 +819,9 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             {/* Mode Content */}
             {sigMode === "draw" ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Draw your signature inside the canvas box:</span>
+                <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                  <span className="hidden sm:inline">Draw your signature inside the canvas box:</span>
+                  <span className="sm:hidden">Draw your signature:</span>
                   <div className="flex items-center gap-2">
                     {/* Pen colors */}
                     <button
@@ -768,7 +867,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                     onTouchStart={startDrawing}
                     onTouchMove={draw}
                     onTouchEnd={stopDrawing}
-                    className="w-full h-[160px] bg-slate-50 rounded-xl cursor-crosshair touch-none"
+                    className="w-full h-[130px] sm:h-[160px] bg-slate-50 rounded-xl cursor-crosshair touch-none"
                   />
                 </div>
               </div>
@@ -798,7 +897,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setIsSigModalOpen(false)}
@@ -809,10 +908,11 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               <button
                 type="button"
                 onClick={applySignature}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+                className="flex-1 sm:flex-none justify-center px-4 sm:px-6 py-2.5 bg-secondary hover:bg-secondary/90 text-white rounded-xl text-xs font-extrabold transition shadow-lg shadow-secondary/30 flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                <span>Apply Signature to Document</span>
+                <span className="sm:hidden">Apply Signature</span>
+                <span className="hidden sm:inline">Apply Signature to Document</span>
               </button>
             </div>
           </div>

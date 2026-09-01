@@ -85,7 +85,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     if (!isPendingSent || !documentData?.id) return;
 
     const loadOpenStatus = () => {
-      fetch(`/api/documents/list?id=${encodeURIComponent(documentData.id)}`)
+      fetch(`/api/documents?id=${encodeURIComponent(documentData.id)}`)
         .then((res) => res.json())
         .then((data) => {
           const found = data.documents?.[0];
@@ -204,8 +204,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [isDetectingBlanks, setIsDetectingBlanks] = useState(false);
-  const [sheetCandidates, setSheetCandidates] = useState<{ candidateName: string; employeeName: string }[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState("");
 
   // Document Building Blocks definition
   const buildingBlocks = [
@@ -261,40 +259,15 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     }
   };
 
-  useEffect(() => {
-    fetch("/api/candidates")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.candidates)) {
-          setSheetCandidates(data.candidates);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleApplySheetCandidate = (name: string) => {
-    setSelectedCandidate(name);
-    if (!name) return;
-    setPlacedFields((prev) =>
-      autoFillFromProfile(
-        prev,
-        { name, email: userSession?.email },
-        { overwriteName: true }
-      )
-    );
-  };
-
   const handleAutoDetectBlanks = async () => {
     if (!activeFileUrl || isDetectingBlanks) return;
     setIsDetectingBlanks(true);
     try {
       const found = await detectBlankFormFields(activeFileUrl);
-      const fillName = selectedCandidate || userSession?.name;
-      const filled = autoFillFromProfile(
-        found,
-        { name: fillName, email: userSession?.email },
-        { overwriteName: !!selectedCandidate }
-      );
+      const filled = autoFillFromProfile(found, {
+        name: userSession?.name,
+        email: userSession?.email,
+      });
       setPlacedFields((prev) => {
         const next = [...prev];
         for (const field of filled) {
@@ -305,11 +278,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
             next.push({ ...field, id: `auto-${Date.now()}-${next.length}` });
           }
         }
-        return autoFillFromProfile(
-          next,
-          { name: fillName, email: userSession?.email },
-          { overwriteName: !!selectedCandidate }
-        );
+        return autoFillFromProfile(next, {
+          name: userSession?.name,
+          email: userSession?.email,
+        });
       });
     } catch (err) {
       console.warn("Auto-detect blanks failed:", err);
@@ -867,21 +839,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
         {/* Far Right Toolbar Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {!isCompletedDoc && sheetCandidates.length > 0 && (
-            <select
-              value={selectedCandidate}
-              onChange={(e) => handleApplySheetCandidate(e.target.value)}
-              className="max-w-[180px] text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary"
-              title="Pick a candidate from the Google Sheet"
-            >
-              <option value="">Sheet candidate...</option>
-              {sheetCandidates.map((c) => (
-                <option key={c.candidateName} value={c.candidateName}>
-                  {c.candidateName}
-                </option>
-              ))}
-            </select>
-          )}
           {!isCompletedDoc && (
             <button
               type="button"

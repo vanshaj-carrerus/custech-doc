@@ -19,6 +19,8 @@ import {
   Loader2,
   Mail,
   MailOpen,
+  Search,
+  BellRing,
 } from "lucide-react";
 
 interface DashboardViewProps {
@@ -57,6 +59,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<RecentDoc | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [reminderNotice, setReminderNotice] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const userEmail = userSession?.email?.toLowerCase();
   const userName = userSession?.name || "User";
@@ -65,8 +73,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     if (!userEmail) return;
 
     const loadDocs = () => {
-      fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
-        .then((res) => res.json())
+      fetch(`/api/documents?email=${encodeURIComponent(userEmail)}`)
+        .then(async (res) => {
+          const contentType = res.headers.get("content-type") || "";
+          if (!res.ok || !contentType.includes("application/json")) {
+            throw new Error(`Documents request failed with status ${res.status}`);
+          }
+          return res.json();
+        })
         .then((data) => {
           if (data.success && data.documents) {
             setMongoDocs(data.documents);
@@ -111,10 +125,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const defaultDocs: RecentDoc[] = mongoDocs;
 
+  const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredDocs = defaultDocs.filter((doc) => {
-    if (filterTab === "completed") return doc.status === "Completed";
-    if (filterTab === "pending") return doc.status === "Pending" || doc.status === "Pending Sign";
-    return true;
+    const matchesTab =
+      filterTab === "completed"
+        ? doc.status === "Completed"
+        : filterTab === "pending"
+          ? doc.status === "Pending" || doc.status === "Pending Sign"
+          : true;
+    const matchesSearch =
+      !normalizedSearch ||
+      [doc.title, doc.recipientName, doc.recipientEmail]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(normalizedSearch));
+    return matchesTab && matchesSearch;
   });
 
   const completedCount = defaultDocs.filter((d) => d.status === "Completed").length;
@@ -125,7 +149,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setDeleteError("");
     try {
       const res = await fetch(
-        `/api/documents/list?id=${encodeURIComponent(deleteTarget.id)}&requesterEmail=${encodeURIComponent(userEmail)}`,
+        `/api/documents?id=${encodeURIComponent(deleteTarget.id)}&requesterEmail=${encodeURIComponent(userEmail)}`,
         { method: "DELETE" }
       );
       const data = await res.json();
@@ -140,6 +164,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     } catch {
       setDeleteError("Unable to connect to server. Please try again.");
       setIsDeleting(false);
+    }
+  };
+
+  const handleSendReminder = async (doc: RecentDoc) => {
+    if (!userEmail || remindingId) return;
+    setRemindingId(doc.id);
+    setReminderNotice(null);
+
+    try {
+      const response = await fetch("/api/documents/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: doc.id, senderEmail: userEmail }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not send reminder");
+      }
+
+      setMongoDocs((current) =>
+        current.map((item) =>
+          item.id === doc.id
+            ? {
+                ...item,
+                reminderCount: data.reminderCount,
+                lastReminderAt: data.lastReminderAt,
+              }
+            : item
+        )
+      );
+      setReminderNotice({ type: "success", message: data.message });
+    } catch (error) {
+      setReminderNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Could not send reminder",
+      });
+    } finally {
+      setRemindingId(null);
     }
   };
 
@@ -216,6 +278,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
+        {/* Search agreements by title, candidate, or email */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by agreement name, candidate name, or email..."
+            aria-label="Search agreements"
+            className="w-full rounded-2xl border border-primary/20 bg-white py-3 pl-11 pr-11 text-sm font-medium text-slate-900 shadow-xs outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-primary/10 hover:text-primary"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
         {/* Recent Documents Table Section */}
         <div className="space-y-4 text-left">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -260,6 +345,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            {reminderNotice && (
+              <div
+                className={`flex items-center justify-between gap-3 border-b px-4 py-3 text-xs font-semibold ${
+                  reminderNotice.type === "success"
+                    ? "border-secondary/20 bg-secondary/10 text-secondary"
+                    : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                <span>{reminderNotice.message}</span>
+                <button
+                  type="button"
+                  onClick={() => setReminderNotice(null)}
+                  aria-label="Dismiss reminder message"
+                  className="rounded-md p-1 transition hover:bg-white/60"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             <div className="divide-y divide-slate-100">
               {filteredDocs.length > 0 ? (
                 filteredDocs.map((doc) => (
@@ -306,8 +410,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {doc.recipientEmail && (
                             <>
                               <span>•</span>
-                              <span className="truncate max-w-[160px]" title={doc.recipientEmail}>
-                                Sent to {doc.recipientEmail}
+                              <span
+                                className="truncate max-w-[220px]"
+                                title={[doc.recipientName, doc.recipientEmail].filter(Boolean).join(" · ")}
+                              >
+                                Sent to {doc.recipientName ? `${doc.recipientName} · ` : ""}
+                                {doc.recipientEmail}
                               </span>
                             </>
                           )}
@@ -349,6 +457,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       )}
 
                       <div className="flex items-center gap-1 text-slate-400 group-hover:text-slate-600">
+                        {(doc.status === "Pending" || doc.status === "Pending Sign") &&
+                          doc.recipientEmail &&
+                          doc.senderEmail?.toLowerCase() === userEmail && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleSendReminder(doc);
+                              }}
+                              disabled={!!remindingId}
+                              className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-1.5 text-[11px] font-bold text-primary transition hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              title={
+                                doc.lastReminderAt
+                                  ? `Last reminder sent ${formatOpenTime(doc.lastReminderAt)}`
+                                  : "Send reminder email"
+                              }
+                            >
+                              {remindingId === doc.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <BellRing className="h-3.5 w-3.5" />
+                              )}
+                              <span className="hidden lg:inline">
+                                {remindingId === doc.id ? "Sending" : "Remind"}
+                              </span>
+                            </button>
+                          )}
                         <button
                           className="p-1.5 hover:bg-slate-100 rounded-lg transition"
                           title="View PDF"
@@ -378,7 +513,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 ))
               ) : (
                 <div className="p-8 text-center text-slate-400 text-xs">
-                  No documents found in this section.
+                  {normalizedSearch
+                    ? `No agreements found for "${searchQuery.trim()}".`
+                    : "No documents found in this section."}
                 </div>
               )}
             </div>

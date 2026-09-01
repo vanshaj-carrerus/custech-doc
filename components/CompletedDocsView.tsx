@@ -39,7 +39,7 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
       return;
     }
 
-    fetch(`/api/documents/list?email=${encodeURIComponent(userEmail)}`)
+    fetch(`/api/documents?email=${encodeURIComponent(userEmail)}`)
       .then((res) => res.json())
       .then((data) => {
         setIsLoading(false);
