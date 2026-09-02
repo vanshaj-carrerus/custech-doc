@@ -27,15 +27,18 @@ export async function POST(request: Request) {
     await connectToDatabase();
 
     if (isMongoId(documentId)) {
-      const existing = await DocumentRecord.findById(documentId).select(
-        "-fileUrl -fileChunks"
-      );
+      const existing = await DocumentRecord.findById(documentId).select("status");
       if (existing) {
+        const hasFile = !!(await DocumentRecord.exists({
+          _id: existing._id,
+          fileUrl: { $exists: true, $nin: [null, ""] },
+        }));
         return NextResponse.json({
           success: true,
           document: {
             id: existing._id.toString(),
             status: existing.status,
+            hasFile,
           },
         });
       }
@@ -56,6 +59,7 @@ export async function POST(request: Request) {
       document: {
         id: created._id.toString(),
         status: created.status,
+        hasFile: false,
       },
     });
   } catch (error: unknown) {

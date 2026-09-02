@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ActiveDocument, UserSession } from "@/types/dochub";
 import {
   Send,
@@ -17,6 +17,80 @@ import {
   Lock,
   PenTool,
 } from "lucide-react";
+
+const MONGO_ID_RE = /^[a-fA-F0-9]{24}$/;
+const CHUNK_SIZE = 2_000_000;
+const UPLOAD_CONCURRENCY = 4;
+
+function getActiveFile(documentData?: ActiveDocument) {
+  const fileUrl =
+    documentData?.fileUrl ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("dochub_pdf_data") ||
+        sessionStorage.getItem("dochub_active_fileUrl")
+      : null);
+  const fileType =
+    documentData?.fileType ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("dochub_pdf_type") ||
+        sessionStorage.getItem("dochub_active_fileType")
+      : null);
+  return { fileUrl, fileType };
+}
+
+async function uploadDocumentFile(
+  savedId: string,
+  fileUrl: string,
+  fileType: string | null | undefined,
+  onProgress?: (done: number, total: number) => void
+) {
+  const comma = fileUrl.indexOf(",");
+  const mime =
+    fileUrl.startsWith("data:") && fileUrl.includes(";")
+      ? fileUrl.slice(5, fileUrl.indexOf(";"))
+      : fileType || "application/pdf";
+  const base64 =
+    fileUrl.startsWith("data:") && comma !== -1 ? fileUrl.slice(comma + 1) : fileUrl;
+  const total = Math.max(1, Math.ceil(base64.length / CHUNK_SIZE));
+  let completed = 0;
+
+  const uploadChunk = async (index: number) => {
+    const chunkRes = await fetch(`/api/documents/${savedId}/chunks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index,
+        data: base64.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE),
+      }),
+    });
+    const chunkData = await chunkRes.json();
+    if (!chunkRes.ok || !chunkData.success) {
+      throw new Error(chunkData.message || "Could not upload the document file");
+    }
+    completed += 1;
+    onProgress?.(completed, total);
+  };
+
+  const queue = Array.from({ length: total }, (_, index) => index);
+  const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, total) }, async () => {
+    while (queue.length > 0) {
+      const next = queue.shift();
+      if (next === undefined) return;
+      await uploadChunk(next);
+    }
+  });
+  await Promise.all(workers);
+
+  const assembleRes = await fetch(`/api/documents/${savedId}/chunks`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ total, mimeType: mime }),
+  });
+  const assembleData = await assembleRes.json();
+  if (!assembleRes.ok || !assembleData.success) {
+    throw new Error(assembleData.message || "Could not finish uploading the document");
+  }
+}
 
 interface SendDocumentModalProps {
   isOpen: boolean;
@@ -70,6 +144,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
   const [sendError, setSendError] = useState("");
   const [sentSigningUrl, setSentSigningUrl] = useState("");
   const [sentDocumentId, setSentDocumentId] = useState("");
+  const [sendProgress, setSendProgress] = useState("");
+  const preparedUpload = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -81,6 +157,44 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     setAlreadySentTo(locked ? documentData?.recipientEmail || "a candidate" : null);
     setSendError("");
   }, [isOpen, isSuccess, documentData?.id, documentData?.status, documentData?.recipientEmail]);
+
+  useEffect(() => {
+    if (!isOpen || isSuccess) return;
+    if (documentData?.status === "Pending Sign" || documentData?.status === "Completed") {
+      return;
+    }
+
+    const { fileUrl, fileType } = getActiveFile(documentData);
+    if (!fileUrl || !senderEmail) return;
+
+    preparedUpload.current = (async () => {
+      const draftRes = await fetch("/api/documents/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: documentData?.id,
+          name: documentData?.name || "Agreement.pdf",
+          size: documentData?.size || "1.2 MB",
+          pages: documentData?.pages || 1,
+          senderEmail,
+          fileType,
+          placedFields: documentData?.placedFields || [],
+        }),
+      });
+      const draftData = await draftRes.json();
+      const savedId = draftData.document?.id || "";
+      if (!draftRes.ok || !draftData.success || !MONGO_ID_RE.test(savedId)) {
+        throw new Error(draftData.message || "Could not prepare this document");
+      }
+      if (!draftData.document?.hasFile) {
+        await uploadDocumentFile(savedId, fileUrl, fileType);
+      }
+      return savedId;
+    })().catch((error) => {
+      preparedUpload.current = null;
+      throw error;
+    });
+  }, [isOpen, isSuccess, documentData?.id, documentData?.status, senderEmail]);
 
   if (!isOpen) return null;
 
@@ -95,18 +209,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     e.preventDefault();
     if (!recipientEmail) return;
 
-    const activeFileUrl =
-      documentData?.fileUrl ||
-      (typeof window !== "undefined"
-        ? localStorage.getItem("dochub_pdf_data") ||
-          sessionStorage.getItem("dochub_active_fileUrl")
-        : null);
-    const activeFileType =
-      documentData?.fileType ||
-      (typeof window !== "undefined"
-        ? localStorage.getItem("dochub_pdf_type") ||
-          sessionStorage.getItem("dochub_active_fileType")
-        : null);
+    const { fileUrl: activeFileUrl, fileType: activeFileType } = getActiveFile(documentData);
     const activePlacedFields =
       documentData?.placedFields ||
       (typeof window !== "undefined" && localStorage.getItem("dochub_placed_fields")
@@ -120,55 +223,48 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
 
     setIsSending(true);
     setSendError("");
+    setSendProgress("Preparing document...");
 
     try {
-      const draftRes = await fetch("/api/documents/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentId: documentData?.id,
-          name: documentData?.name || "Agreement.pdf",
-          size: documentData?.size || "1.2 MB",
-          pages: documentData?.pages || 1,
-          senderEmail,
-          fileType: activeFileType,
-          placedFields: activePlacedFields,
-        }),
-      });
-      const draftData = await draftRes.json();
-      const savedId = draftData.document?.id || "";
-      if (!draftRes.ok || !draftData.success || !/^[a-fA-F0-9]{24}$/.test(savedId)) {
-        throw new Error(draftData.message || "Could not prepare this document");
-      }
-
-      const comma = activeFileUrl.indexOf(",");
-      const mime =
-        activeFileUrl.startsWith("data:") && activeFileUrl.includes(";")
-          ? activeFileUrl.slice(5, activeFileUrl.indexOf(";"))
-          : activeFileType || "application/pdf";
-      const base64 =
-        activeFileUrl.startsWith("data:") && comma !== -1
-          ? activeFileUrl.slice(comma + 1)
-          : activeFileUrl;
-      const chunkSize = 700000;
-      const total = Math.max(1, Math.ceil(base64.length / chunkSize));
-      for (let index = 0; index < total; index++) {
-        const chunkRes = await fetch(`/api/documents/${savedId}/chunks`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            index,
-            total,
-            data: base64.slice(index * chunkSize, (index + 1) * chunkSize),
-            mimeType: mime,
-          }),
-        });
-        const chunkData = await chunkRes.json();
-        if (!chunkRes.ok || !chunkData.success) {
-          throw new Error(chunkData.message || "Could not upload the document file");
+      let savedId = "";
+      if (preparedUpload.current) {
+        setSendProgress("Uploading document...");
+        try {
+          savedId = await preparedUpload.current;
+        } catch {
+          preparedUpload.current = null;
         }
       }
 
+      if (!savedId) {
+        const draftRes = await fetch("/api/documents/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            documentId: documentData?.id,
+            name: documentData?.name || "Agreement.pdf",
+            size: documentData?.size || "1.2 MB",
+            pages: documentData?.pages || 1,
+            senderEmail,
+            fileType: activeFileType,
+            placedFields: activePlacedFields,
+          }),
+        });
+        const draftData = await draftRes.json();
+        savedId = draftData.document?.id || "";
+        if (!draftRes.ok || !draftData.success || !MONGO_ID_RE.test(savedId)) {
+          throw new Error(draftData.message || "Could not prepare this document");
+        }
+
+        if (!draftData.document?.hasFile) {
+          setSendProgress("Uploading document...");
+          await uploadDocumentFile(savedId, activeFileUrl, activeFileType, (done, total) => {
+            setSendProgress(`Uploading ${done}/${total}...`);
+          });
+        }
+      }
+
+      setSendProgress("Sending email...");
       const res = await fetch("/api/documents/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,7 +297,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       }
 
       const sentId = data.document?.id || savedId;
-      if (!/^[a-fA-F0-9]{24}$/.test(sentId) || !data.signingUrl) {
+      if (!MONGO_ID_RE.test(sentId) || !data.signingUrl) {
         setSendError("The document was not saved correctly. Please upload it again and send.");
         setIsSending(false);
         return;
@@ -237,11 +333,13 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
   const handleResetAndClose = () => {
     setIsSuccess(false);
     setIsSending(false);
+    setSendProgress("");
     setRecipientEmail("");
     setRecipientName("");
     setSendError("");
     setSentSigningUrl("");
     setSentDocumentId("");
+    preparedUpload.current = null;
     onClose();
   };
 
@@ -436,7 +534,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
                 {isSending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Sending to Candidate...</span>
+                    <span>{sendProgress || "Sending to Candidate..."}</span>
                   </>
                 ) : (
                   <>
