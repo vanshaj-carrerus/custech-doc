@@ -45,6 +45,7 @@ export async function GET(request: Request) {
 
     const documentsQuery = DocumentRecord.find(query)
       .sort({ createdAt: -1 })
+      .allowDiskUse(true)
       .limit(50)
       .select("-fileUrl");
     if (!docId) {

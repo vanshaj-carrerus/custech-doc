@@ -48,7 +48,14 @@ export async function POST(request: Request) {
     }
 
     await connectToDatabase();
-    const existing = await DocumentRecord.findById(documentId);
+    // Never load fileUrl here — it's the base64 PDF (can be many MB) and this
+    // route only needs to know it exists, not its content. Loading it drags
+    // the whole file over the network to the app and back on save, which was
+    // the main source of latency on this route (mirrors the fix already
+    // applied in draft/route.ts and list/route.ts).
+    const existing = await DocumentRecord.findById(documentId).select(
+      "name size pages fileType senderEmail recipientEmail recipientName subject message placedFields status"
+    );
 
     if (!existing) {
       return NextResponse.json(
@@ -71,7 +78,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!existing.fileUrl) {
+    const hasFile = !!(await DocumentRecord.exists({
+      _id: documentId,
+      fileUrl: { $exists: true, $nin: [null, ""] },
+    }));
+    if (!hasFile) {
       return NextResponse.json(
         {
           success: false,
@@ -93,18 +104,22 @@ export async function POST(request: Request) {
     existing.placedFields = placedFields || existing.placedFields || [];
     existing.status = "Pending Sign";
     existing.sentAt = new Date();
-    await existing.save();
 
     const docId = existing._id.toString();
-    const emailResult = await sendCandidateAgreementEmail({
-      senderEmail: cleanSender,
-      recipientEmail: cleanRecipient,
-      recipientName: existing.recipientName,
-      docName: existing.name,
-      docId,
-      subject: subject || `Signature Requested: ${existing.name}`,
-      message: message || "",
-    });
+    // Save and email don't depend on each other — run them together instead
+    // of back-to-back so the slower of the two determines total time, not the sum.
+    const [, emailResult] = await Promise.all([
+      existing.save(),
+      sendCandidateAgreementEmail({
+        senderEmail: cleanSender,
+        recipientEmail: cleanRecipient,
+        recipientName: existing.recipientName,
+        docName: existing.name,
+        docId,
+        subject: subject || `Signature Requested: ${existing.name}`,
+        message: message || "",
+      }),
+    ]);
 
     if (!emailResult.success) {
       return NextResponse.json(

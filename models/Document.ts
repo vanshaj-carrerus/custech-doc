@@ -25,7 +25,6 @@ export interface IDocumentRecord extends Document {
   lastReminderAt?: Date;
   automaticReminderSentAt?: Date;
   automaticReminderClaimedAt?: Date;
-  fileChunks?: { index: number; data: string }[];
   createdAt: Date;
 }
 
@@ -36,7 +35,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     pages: { type: Number, default: 1 },
     fileUrl: { type: String },
     fileType: { type: String },
-    senderEmail: { type: String, required: true, index: true },
+    senderEmail: { type: String, required: true },
     recipientEmail: { type: String },
     recipientName: { type: String },
     subject: { type: String },
@@ -59,10 +58,16 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     lastReminderAt: { type: Date },
     automaticReminderSentAt: { type: Date },
     automaticReminderClaimedAt: { type: Date },
-    fileChunks: { type: Array, default: [] },
   },
   { timestamps: true }
 );
+
+// Lets Mongo satisfy the dashboard's { senderEmail | recipientEmail } + sort(createdAt)
+// query straight from the index instead of buffering full documents (which include
+// the base64 PDF in fileUrl) in memory to sort — that was blowing past the 32MB
+// in-memory sort limit.
+DocumentSchema.index({ senderEmail: 1, createdAt: -1 });
+DocumentSchema.index({ recipientEmail: 1, createdAt: -1 });
 
 const MODEL_NAME = "DocumentRecord";
 if (mongoose.models[MODEL_NAME]) {

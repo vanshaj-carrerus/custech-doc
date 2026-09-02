@@ -440,7 +440,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       <div className="flex-1 p-1 sm:p-3 md:p-5 flex justify-center overflow-x-hidden overflow-y-auto bg-slate-200/80">
         <div className="w-full flex flex-col items-center space-y-4">
           {/* Document Paper Canvas */}
-          <div className="relative w-full min-w-0 bg-slate-300 p-1 sm:p-2 md:p-4 rounded-lg md:rounded-2xl shadow-xl md:shadow-2xl flex justify-center border border-slate-300 overflow-hidden">
+          <div className="relative w-full max-w-[850px] min-w-0 bg-slate-300 p-1 sm:p-2 md:p-4 rounded-lg md:rounded-2xl shadow-xl md:shadow-2xl flex justify-center border border-slate-300 overflow-hidden">
             <div
               ref={documentViewportRef}
               className="relative w-full min-w-0 bg-white text-slate-900 shadow-xl md:shadow-2xl border border-slate-300 rounded-sm md:rounded-lg overflow-hidden transition-all duration-200"

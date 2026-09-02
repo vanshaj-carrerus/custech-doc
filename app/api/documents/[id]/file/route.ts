@@ -99,3 +99,44 @@ export async function GET(
     );
   }
 }
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  if (!MONGO_ID_RE.test(id)) {
+    return NextResponse.json(
+      { success: false, message: "Invalid document id" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const { fileUrl, fileType } = await request.json();
+    if (!fileUrl || !/^https?:\/\//i.test(fileUrl)) {
+      return NextResponse.json(
+        { success: false, message: "A valid uploaded file URL is required" },
+        { status: 400 }
+      );
+    }
+
+    await connectToDatabase();
+    await DocumentRecord.updateOne(
+      { _id: id },
+      { $set: { fileUrl, fileType: fileType || "application/pdf" } }
+    );
+    documentFileCache.delete(id);
+
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    console.error("Document file save error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: error instanceof Error ? error.message : "Could not save the uploaded file",
+      },
+      { status: 500 }
+    );
+  }
+}

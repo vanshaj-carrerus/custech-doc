@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { upload } from "@imagekit/next";
 import { ActiveDocument, UserSession } from "@/types/dochub";
 import {
   Send,
@@ -19,8 +20,13 @@ import {
 } from "lucide-react";
 
 const MONGO_ID_RE = /^[a-fA-F0-9]{24}$/;
-const CHUNK_SIZE = 2_000_000;
-const UPLOAD_CONCURRENCY = 4;
+
+function extensionForMime(mime: string) {
+  if (mime.includes("pdf")) return "pdf";
+  if (mime.includes("png")) return "png";
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
+  return "bin";
+}
 
 function getActiveFile(documentData?: ActiveDocument) {
   const fileUrl =
@@ -44,51 +50,44 @@ async function uploadDocumentFile(
   fileType: string | null | undefined,
   onProgress?: (done: number, total: number) => void
 ) {
-  const comma = fileUrl.indexOf(",");
   const mime =
     fileUrl.startsWith("data:") && fileUrl.includes(";")
       ? fileUrl.slice(5, fileUrl.indexOf(";"))
       : fileType || "application/pdf";
-  const base64 =
-    fileUrl.startsWith("data:") && comma !== -1 ? fileUrl.slice(comma + 1) : fileUrl;
-  const total = Math.max(1, Math.ceil(base64.length / CHUNK_SIZE));
-  let completed = 0;
 
-  const uploadChunk = async (index: number) => {
-    const chunkRes = await fetch(`/api/documents/${savedId}/chunks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        index,
-        data: base64.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE),
-      }),
-    });
-    const chunkData = await chunkRes.json();
-    if (!chunkRes.ok || !chunkData.success) {
-      throw new Error(chunkData.message || "Could not upload the document file");
-    }
-    completed += 1;
-    onProgress?.(completed, total);
-  };
+  // The file is uploaded straight from the browser to ImageKit (not through
+  // our own server), so it never has to round-trip through our database.
+  const file = await (await fetch(fileUrl)).blob();
 
-  const queue = Array.from({ length: total }, (_, index) => index);
-  const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, total) }, async () => {
-    while (queue.length > 0) {
-      const next = queue.shift();
-      if (next === undefined) return;
-      await uploadChunk(next);
-    }
+  const authRes = await fetch("/api/imagekit-auth");
+  const auth = await authRes.json();
+  if (!authRes.ok || !auth.success) {
+    throw new Error(auth.message || "Could not authorize the upload");
+  }
+
+  const result = await upload({
+    file,
+    fileName: `document-${savedId}.${extensionForMime(mime)}`,
+    publicKey: auth.publicKey,
+    signature: auth.signature,
+    token: auth.token,
+    expire: auth.expire,
+    useUniqueFileName: true,
+    onProgress: (event) => onProgress?.(event.loaded, event.total),
   });
-  await Promise.all(workers);
 
-  const assembleRes = await fetch(`/api/documents/${savedId}/chunks`, {
+  if (!result.url) {
+    throw new Error("ImageKit did not return a file URL");
+  }
+
+  const saveRes = await fetch(`/api/documents/${savedId}/file`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ total, mimeType: mime }),
+    body: JSON.stringify({ fileUrl: result.url, fileType: mime }),
   });
-  const assembleData = await assembleRes.json();
-  if (!assembleRes.ok || !assembleData.success) {
-    throw new Error(assembleData.message || "Could not finish uploading the document");
+  const saveData = await saveRes.json();
+  if (!saveRes.ok || !saveData.success) {
+    throw new Error(saveData.message || "Could not finish uploading the document");
   }
 }
 
