@@ -22,32 +22,16 @@ export function getTransporter() {
     return global.mailTransporter;
   }
 
-  const poolOpts = {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS,
+    },
     pool: true,
     maxConnections: 3,
     maxMessages: 100,
-  };
-
-  const transporter =
-    process.env.SMTP_HOST && process.env.SMTP_PORT
-      ? nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: parseInt(process.env.SMTP_PORT, 10),
-          secure: process.env.SMTP_PORT === "465",
-          auth: {
-            user: EMAIL_USER,
-            pass: EMAIL_PASS,
-          },
-          ...poolOpts,
-        })
-      : nodemailer.createTransport({
-          service: "gmail",
-          auth: {
-            user: EMAIL_USER,
-            pass: EMAIL_PASS,
-          },
-          ...poolOpts,
-        });
+  });
 
   global.mailTransporter = transporter;
   return transporter;
