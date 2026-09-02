@@ -15,6 +15,16 @@ export async function GET(request: Request) {
     let query: any = {};
 
     if (docId) {
+      if (!MONGO_ID_RE.test(docId)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This signing link is invalid. The document must be sent again so the candidate gets a valid link.",
+          },
+          { status: 404 }
+        );
+      }
       query._id = docId;
     } else if (email) {
       // Strictly filter documents by user email (sender or recipient)

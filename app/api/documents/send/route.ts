@@ -36,6 +36,16 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!fileUrl || typeof fileUrl !== "string") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "The document file is missing. Upload the file again, then send it.",
+        },
+        { status: 400 }
+      );
+    }
+
     let docRecord: any = null;
 
     try {
@@ -93,10 +103,25 @@ export async function POST(request: Request) {
         });
       }
     } catch (dbErr) {
-      console.warn("[MongoDB] Save warning (using fallback document ID):", dbErr);
+      console.error("[MongoDB] Could not save document before send:", dbErr);
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Could not save this document. The file may be too large. Try sending again or use a smaller PDF.",
+        },
+        { status: 500 }
+      );
     }
 
-    const docId = docRecord?._id ? docRecord._id.toString() : `dh-${Date.now().toString().slice(-6)}`;
+    if (!docRecord?._id) {
+      return NextResponse.json(
+        { success: false, message: "Document was not saved. Please try sending again." },
+        { status: 500 }
+      );
+    }
+
+    const docId = docRecord._id.toString();
     const finalDocName = docRecord?.name || name || "Document.pdf";
     const finalSender = docRecord?.senderEmail || senderEmail.toLowerCase();
     const finalRecipient = docRecord?.recipientEmail || recipientEmail.toLowerCase();
@@ -134,21 +159,17 @@ export async function POST(request: Request) {
         createdAt: new Date().toISOString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Send Document error:", error);
-    const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
-    const appBaseUrl = rawAppUrl.replace(/\/$/, "");
-    return NextResponse.json({
-      success: true,
-      message: "Document created (fallback mode)",
-      signingUrl: `${appBaseUrl}/sign/dh-${Date.now().toString().slice(-6)}`,
-      document: {
-        id: `dh-${Date.now().toString().slice(-6)}`,
-        name: "Agreement.pdf",
-        senderEmail: "recruiter@gmail.com",
-        recipientEmail: "candidate@gmail.com",
-        status: "Pending Sign",
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not send this document. Please try again.",
       },
-    });
+      { status: 500 }
+    );
   }
 }

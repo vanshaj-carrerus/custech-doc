@@ -68,6 +68,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       : documentData?.recipientEmail || null
   );
   const [sendError, setSendError] = useState("");
+  const [sentSigningUrl, setSentSigningUrl] = useState("");
+  const [sentDocumentId, setSentDocumentId] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -87,13 +89,19 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       ? window.location.origin
       : process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app"
   ).replace(/\/$/, "");
-  const candidateLink = `${baseUrl}/sign/${
-    documentData?.id || "dh-884920"
-  }?candidate=${encodeURIComponent(recipientEmail || "candidate@email.com")}`;
+  const candidateLink =
+    sentSigningUrl ||
+    `${baseUrl}/sign/${sentDocumentId || documentData?.id || ""}?candidate=${encodeURIComponent(
+      sentInfo?.email || recipientEmail || "candidate@email.com"
+    )}`;
 
   const handleSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipientEmail) return;
+    if (!documentData?.fileUrl && typeof window !== "undefined" && !localStorage.getItem("dochub_pdf_data") && !sessionStorage.getItem("dochub_active_fileUrl")) {
+      setSendError("The document file is missing. Upload the file again, then send it.");
+      return;
+    }
 
     setIsSending(true);
     setSendError("");
@@ -135,27 +143,29 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
         return;
       }
 
+      const savedId = data.document?.id || "";
+      if (!/^[a-fA-F0-9]{24}$/.test(savedId)) {
+        setSendError("The document was not saved correctly. Please upload it again and send.");
+        setIsSending(false);
+        return;
+      }
+
       setIsSending(false);
       setIsSuccess(true);
+      setSentDocumentId(savedId);
+      setSentSigningUrl(data.signingUrl || `${baseUrl}/sign/${savedId}?candidate=${encodeURIComponent(recipientEmail)}`);
       setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
       if (onSuccessSent) {
         onSuccessSent({
           recipientEmail,
           recipientName: recipientName || recipientEmail,
-          documentId: data.document?.id,
+          documentId: savedId,
         });
       }
     } catch (error) {
-      console.warn("MongoDB Document save warning:", error);
+      console.warn("Document send failed:", error);
+      setSendError("Could not send this document. Please try again.");
       setIsSending(false);
-      setIsSuccess(true);
-      setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
-      if (onSuccessSent) {
-        onSuccessSent({
-          recipientEmail,
-          recipientName: recipientName || recipientEmail,
-        });
-      }
     }
   };
 
@@ -171,6 +181,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     setRecipientEmail("");
     setRecipientName("");
     setSendError("");
+    setSentSigningUrl("");
+    setSentDocumentId("");
     onClose();
   };
 

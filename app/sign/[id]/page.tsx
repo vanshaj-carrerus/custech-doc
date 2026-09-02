@@ -60,7 +60,11 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
       })
       .catch((err) => {
         console.warn("Doc fetch warning:", err);
-        setLoadError(err instanceof Error ? err.message : "Document could not be loaded");
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "This signing link is not valid. Ask the sender to send the document again."
+        );
       })
       .finally(() => setIsLoading(false));
 
