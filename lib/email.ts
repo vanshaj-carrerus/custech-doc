@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 
-const EMAIL_USER = process.env.EMAIL_USER || process.env.SMTP_USER || "baldaniyaneev81@gmail.com";
-const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASS || "";
+const EMAIL_USER = process.env.EMAIL_USER || "";
+const EMAIL_PASS = process.env.EMAIL_PASS || "";
 const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app";
 const APP_URL = rawAppUrl.replace(/\/$/, "");
 
