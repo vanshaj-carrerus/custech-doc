@@ -9,28 +9,48 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Direct Nodemailer Gmail Service Transporter
+// Direct Nodemailer Gmail Service Transporter — reused across sends (pooled
+// connections) instead of doing a fresh SMTP handshake + login every time,
+// which was the main source of per-send latency.
+declare global {
+  // eslint-disable-next-line no-var
+  var mailTransporter: nodemailer.Transporter | undefined;
+}
+
 export function getTransporter() {
-  if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT, 10),
-      secure: process.env.SMTP_PORT === "465",
-      auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS,
-      },
-    });
+  if (global.mailTransporter) {
+    return global.mailTransporter;
   }
 
-  // Pure Nodemailer Gmail Service
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS,
-    },
-  });
+  const poolOpts = {
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
+  };
+
+  const transporter =
+    process.env.SMTP_HOST && process.env.SMTP_PORT
+      ? nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT, 10),
+          secure: process.env.SMTP_PORT === "465",
+          auth: {
+            user: EMAIL_USER,
+            pass: EMAIL_PASS,
+          },
+          ...poolOpts,
+        })
+      : nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: EMAIL_USER,
+            pass: EMAIL_PASS,
+          },
+          ...poolOpts,
+        });
+
+  global.mailTransporter = transporter;
+  return transporter;
 }
 
 interface SendCandidateEmailParams {
@@ -122,8 +142,9 @@ export async function sendCandidateAgreementEmail({
     console.log(`[Nodemailer] Agreement link email sent to candidate: ${recipientEmail} (Msg ID: ${info.messageId})`);
     return { success: true, messageId: info.messageId, signingUrl };
   } catch (error: unknown) {
-    console.warn(`[Nodemailer] Email delivery warning:`, getErrorMessage(error));
-    return { success: true, simulated: true, signingUrl };
+    const message = getErrorMessage(error);
+    console.warn(`[Nodemailer] Email delivery failed:`, message);
+    return { success: false, message, signingUrl };
   }
 }
 
@@ -242,7 +263,8 @@ export async function sendCompletedAgreementEmail({
     console.log(`[Nodemailer] Completed agreement email sent to both ${recipientEmail} and ${senderEmail}`);
     return { success: true, messageId: info.messageId };
   } catch (error: unknown) {
-    console.warn(`[Nodemailer] Completed email delivery warning:`, getErrorMessage(error));
-    return { success: true, simulated: true };
+    const message = getErrorMessage(error);
+    console.warn(`[Nodemailer] Completed email delivery failed:`, message);
+    return { success: false, message };
   }
 }
