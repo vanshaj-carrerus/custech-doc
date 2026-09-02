@@ -55,8 +55,12 @@ export async function sendCandidateAgreementEmail({
   message,
   baseUrl,
 }: SendCandidateEmailParams) {
-  const domainBase = (baseUrl || APP_URL).replace(/\/$/, "");
-  const publicBase = APP_URL.replace(/\/$/, "");
+  if (!/^[a-fA-F0-9]{24}$/.test(docId)) {
+    return { success: false, message: "Cannot email an invalid document link" };
+  }
+
+  const domainBase = APP_URL.replace(/\/$/, "");
+  const publicBase = (baseUrl || APP_URL).replace(/\/$/, "");
   const signingUrl = `${domainBase}/sign/${docId}?candidate=${encodeURIComponent(recipientEmail)}`;
   const trackedClickUrl = `${domainBase}/api/documents/track/${docId}?event=click&candidate=${encodeURIComponent(recipientEmail)}`;
   const openPixelUrl = `${domainBase}/api/documents/track/${docId}?event=open`;

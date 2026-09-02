@@ -25,6 +25,7 @@ export interface IDocumentRecord extends Document {
   lastReminderAt?: Date;
   automaticReminderSentAt?: Date;
   automaticReminderClaimedAt?: Date;
+  fileChunks?: { index: number; data: string }[];
   createdAt: Date;
 }
 
@@ -58,6 +59,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     lastReminderAt: { type: Date },
     automaticReminderSentAt: { type: Date },
     automaticReminderClaimedAt: { type: Date },
+    fileChunks: { type: Array, default: [] },
   },
   { timestamps: true }
 );

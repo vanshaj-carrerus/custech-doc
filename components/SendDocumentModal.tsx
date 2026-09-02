@@ -89,16 +89,31 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       ? window.location.origin
       : process.env.NEXT_PUBLIC_APP_URL || "https://cus-doc.vercel.app"
   ).replace(/\/$/, "");
-  const candidateLink =
-    sentSigningUrl ||
-    `${baseUrl}/sign/${sentDocumentId || documentData?.id || ""}?candidate=${encodeURIComponent(
-      sentInfo?.email || recipientEmail || "candidate@email.com"
-    )}`;
+  const candidateLink = sentSigningUrl;
 
   const handleSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipientEmail) return;
-    if (!documentData?.fileUrl && typeof window !== "undefined" && !localStorage.getItem("dochub_pdf_data") && !sessionStorage.getItem("dochub_active_fileUrl")) {
+
+    const activeFileUrl =
+      documentData?.fileUrl ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("dochub_pdf_data") ||
+          sessionStorage.getItem("dochub_active_fileUrl")
+        : null);
+    const activeFileType =
+      documentData?.fileType ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("dochub_pdf_type") ||
+          sessionStorage.getItem("dochub_active_fileType")
+        : null);
+    const activePlacedFields =
+      documentData?.placedFields ||
+      (typeof window !== "undefined" && localStorage.getItem("dochub_placed_fields")
+        ? JSON.parse(localStorage.getItem("dochub_placed_fields")!)
+        : []);
+
+    if (!activeFileUrl) {
       setSendError("The document file is missing. Upload the file again, then send it.");
       return;
     }
@@ -106,12 +121,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
     setIsSending(true);
     setSendError("");
 
-    const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
-    const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
-    const activePlacedFields = documentData?.placedFields || (typeof window !== "undefined" ? (localStorage.getItem("dochub_placed_fields") ? JSON.parse(localStorage.getItem("dochub_placed_fields")!) : []) : []);
-
     try {
-      const res = await fetch("/api/documents/send", {
+      const draftRes = await fetch("/api/documents/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -119,7 +130,53 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           name: documentData?.name || "Agreement.pdf",
           size: documentData?.size || "1.2 MB",
           pages: documentData?.pages || 1,
-          fileUrl: activeFileUrl,
+          senderEmail,
+          fileType: activeFileType,
+          placedFields: activePlacedFields,
+        }),
+      });
+      const draftData = await draftRes.json();
+      const savedId = draftData.document?.id || "";
+      if (!draftRes.ok || !draftData.success || !/^[a-fA-F0-9]{24}$/.test(savedId)) {
+        throw new Error(draftData.message || "Could not prepare this document");
+      }
+
+      const comma = activeFileUrl.indexOf(",");
+      const mime =
+        activeFileUrl.startsWith("data:") && activeFileUrl.includes(";")
+          ? activeFileUrl.slice(5, activeFileUrl.indexOf(";"))
+          : activeFileType || "application/pdf";
+      const base64 =
+        activeFileUrl.startsWith("data:") && comma !== -1
+          ? activeFileUrl.slice(comma + 1)
+          : activeFileUrl;
+      const chunkSize = 700000;
+      const total = Math.max(1, Math.ceil(base64.length / chunkSize));
+      for (let index = 0; index < total; index++) {
+        const chunkRes = await fetch(`/api/documents/${savedId}/chunks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            index,
+            total,
+            data: base64.slice(index * chunkSize, (index + 1) * chunkSize),
+            mimeType: mime,
+          }),
+        });
+        const chunkData = await chunkRes.json();
+        if (!chunkRes.ok || !chunkData.success) {
+          throw new Error(chunkData.message || "Could not upload the document file");
+        }
+      }
+
+      const res = await fetch("/api/documents/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: savedId,
+          name: documentData?.name || "Agreement.pdf",
+          size: documentData?.size || "1.2 MB",
+          pages: documentData?.pages || 1,
           fileType: activeFileType,
           placedFields: activePlacedFields,
           senderEmail: senderEmail,
@@ -143,8 +200,8 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
         return;
       }
 
-      const savedId = data.document?.id || "";
-      if (!/^[a-fA-F0-9]{24}$/.test(savedId)) {
+      const sentId = data.document?.id || savedId;
+      if (!/^[a-fA-F0-9]{24}$/.test(sentId) || !data.signingUrl) {
         setSendError("The document was not saved correctly. Please upload it again and send.");
         setIsSending(false);
         return;
@@ -152,19 +209,21 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
 
       setIsSending(false);
       setIsSuccess(true);
-      setSentDocumentId(savedId);
-      setSentSigningUrl(data.signingUrl || `${baseUrl}/sign/${savedId}?candidate=${encodeURIComponent(recipientEmail)}`);
+      setSentDocumentId(sentId);
+      setSentSigningUrl(data.signingUrl);
       setSentInfo({ email: recipientEmail, name: recipientName || recipientEmail });
       if (onSuccessSent) {
         onSuccessSent({
           recipientEmail,
           recipientName: recipientName || recipientEmail,
-          documentId: savedId,
+          documentId: sentId,
         });
       }
     } catch (error) {
       console.warn("Document send failed:", error);
-      setSendError("Could not send this document. Please try again.");
+      setSendError(
+        error instanceof Error ? error.message : "Could not send this document. Please try again."
+      );
       setIsSending(false);
     }
   };
