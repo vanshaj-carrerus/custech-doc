@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
 import {
-  getPdfLayoutInfo,
   getPdfjsLib,
   toUint8Array,
 } from "@/lib/pdfUtils";
@@ -68,15 +67,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     }
     if (documentData?.placedFields && documentData.placedFields.length > 0) {
       return documentData.placedFields;
-    }
-    if (typeof window !== "undefined") {
-      const savedPlaced = localStorage.getItem("dochub_placed_fields");
-      if (savedPlaced) {
-        try {
-          const parsed = JSON.parse(savedPlaced);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        } catch {}
-      }
     }
     return [
       {
@@ -174,25 +164,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  const activeFileUrl = documentData?.fileUrl || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl") : null);
-  const activeFileType = documentData?.fileType || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_type") || sessionStorage.getItem("dochub_active_fileType") : null);
-  const activeDocName = documentData?.name || (typeof window !== "undefined" ? localStorage.getItem("dochub_pdf_name") || sessionStorage.getItem("dochub_active_name") : null) || docName;
+  const activeFileUrl = documentData?.fileUrl;
+  const activeFileType = documentData?.fileType;
+  const activeDocName = documentData?.name || docName;
 
   const [detectedPages, setDetectedPages] = useState<number | null>(null);
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
   const [renderedPdfPages, setRenderedPdfPages] = useState<string[]>([]);
   const [isRenderingPdf, setIsRenderingPdf] = useState(false);
-
-  useEffect(() => {
-    if (activeFileUrl) {
-      getPdfLayoutInfo(activeFileUrl).then(({ pageCount, pageHeightPx }) => {
-        setDetectedPages(pageCount);
-        setDetectedPageHeightPx(pageHeightPx);
-      });
-    } else if (documentData?.pages) {
-      setDetectedPages(documentData.pages);
-    }
-  }, [activeFileUrl, documentData]);
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const pageHeightPx = detectedPageHeightPx || 1050;
@@ -220,10 +199,20 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         ]);
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
         const images: string[] = [];
+        const firstPage = await pdf.getPage(1);
+        const firstViewport = firstPage.getViewport({ scale: 1 });
+        const firstRenderScale = 794 / firstViewport.width;
+        if (!cancelled) {
+          setDetectedPages(pdf.numPages || 1);
+          setDetectedPageHeightPx(
+            Math.round(firstViewport.height * firstRenderScale)
+          );
+        }
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
           if (cancelled) return;
-          const page = await pdf.getPage(pageNumber);
+          const page =
+            pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const initialViewport = page.getViewport({ scale: 1 });
           const renderScale = 794 / initialViewport.width;
           const viewport = page.getViewport({ scale: renderScale });
@@ -239,9 +228,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             canvas,
           }).promise;
           images.push(canvas.toDataURL("image/jpeg", 0.9));
+          if (!cancelled) setRenderedPdfPages([...images]);
         }
-
-        if (!cancelled) setRenderedPdfPages(images);
       } catch (error) {
         console.warn("Responsive PDF rendering failed:", error);
       } finally {
@@ -260,7 +248,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     if (!viewport) return;
 
     const updateWidth = () => {
-      setDocumentWidth(Math.min(794, viewport.clientWidth || 794));
+      setDocumentWidth(viewport.clientWidth || 794);
     };
     const observer = new ResizeObserver(updateWidth);
     observer.observe(viewport);
@@ -268,7 +256,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const documentScale = Math.min(1, documentWidth / 794);
+  const documentScale = documentWidth / 794;
   const iframeHeightPx = containerMinHeightPx * documentScale;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
@@ -449,13 +437,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       </header>
 
       {/* Main Workspace Area (Clean PDF Display) */}
-      <div className="flex-1 p-2 sm:p-4 md:p-8 flex justify-center overflow-x-hidden overflow-y-auto bg-slate-200/80">
-        <div className="w-full max-w-4xl flex flex-col items-center space-y-6">
+      <div className="flex-1 p-1 sm:p-3 md:p-5 flex justify-center overflow-x-hidden overflow-y-auto bg-slate-200/80">
+        <div className="w-full flex flex-col items-center space-y-4">
           {/* Document Paper Canvas */}
-          <div className="relative w-full min-w-0 max-w-[842px] bg-slate-300 p-1 sm:p-2 md:p-6 rounded-xl md:rounded-3xl shadow-xl md:shadow-2xl flex justify-center border border-slate-300 overflow-hidden">
+          <div className="relative w-full min-w-0 bg-slate-300 p-1 sm:p-2 md:p-4 rounded-lg md:rounded-2xl shadow-xl md:shadow-2xl flex justify-center border border-slate-300 overflow-hidden">
             <div
               ref={documentViewportRef}
-              className="relative w-full min-w-0 max-w-[794px] bg-white text-slate-900 shadow-xl md:shadow-2xl border border-slate-300 rounded-sm md:rounded-lg overflow-hidden transition-all duration-200"
+              className="relative w-full min-w-0 bg-white text-slate-900 shadow-xl md:shadow-2xl border border-slate-300 rounded-sm md:rounded-lg overflow-hidden transition-all duration-200"
               style={{
                 minHeight: activeFileUrl && isImageDoc ? "auto" : `${iframeHeightPx}px`,
               }}
@@ -477,6 +465,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                           key={`${index}-${pageImage.length}`}
                           src={pageImage}
                           alt={`${activeDocName} – page ${index + 1}`}
+                          loading={index === 0 ? "eager" : "lazy"}
+                          decoding="async"
                           className="block h-auto w-full max-w-full select-none pointer-events-none"
                         />
                       ))}
@@ -500,25 +490,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                     </div>
                   )
                 ) : (
-                /* Fallback Document Background Paper */
-                <div className="p-10 text-left space-y-6 z-0 select-none opacity-80 pointer-events-none">
-                  <div className="flex justify-between items-center border-b pb-4 border-slate-200">
-                    <h3 className="font-serif text-lg font-bold text-slate-800">
-                      {docName}
-                    </h3>
-                    <span className="text-xs font-mono text-slate-400">
-                      Doc ID: {documentData?.id || "DH-884920"}
-                    </span>
-                  </div>
-
-                  <div className="space-y-3 text-xs text-slate-600 leading-relaxed max-w-xl">
-                    <p>
-                      This Legal Agreement is made and entered into by and between the Recruiter (<strong className="text-slate-800">{recruiterEmail}</strong>) and Candidate (<strong className="text-slate-800">{candidateEmail}</strong>).
-                    </p>
-                    <p>
-                      By signing this document, the Candidate acknowledges receipt of all terms, conditions, and schedules set forth herein and agrees to execute all required fields.
-                    </p>
-                  </div>
+                <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 bg-white p-8 text-center">
+                  <FileText className="h-10 w-10 text-primary" />
+                  <p className="text-sm font-bold text-slate-800">
+                    Uploaded document unavailable
+                  </p>
+                  <p className="max-w-sm text-xs text-slate-500">
+                    The original file could not be found. Please ask the sender to upload and send the document again.
+                  </p>
                 </div>
               )}
 
@@ -733,7 +712,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
 
           {/* Actions Bar below canvas */}
           {!isCompleted && (
-            <div className={`sticky bottom-2 z-30 w-full max-w-[794px] bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 sm:p-4 flex items-center shadow-lg ${standalone ? "justify-end" : "justify-between"}`}>
+            <div className={`sticky bottom-2 z-30 w-full bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl p-3 sm:p-4 flex items-center shadow-lg ${standalone ? "justify-end" : "justify-between"}`}>
               {!standalone && (
                 <button
                   type="button"

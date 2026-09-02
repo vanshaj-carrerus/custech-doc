@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveView, DocumentField, ActiveDocument, UserSession } from "@/types/dochub";
-import { getPdfLayoutInfo, getPdfjsLib, toUint8Array } from "@/lib/pdfUtils";
+import { getPdfjsLib, toUint8Array } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
   Grid,
@@ -44,6 +44,10 @@ import {
   Plus,
 } from "lucide-react";
 
+function roundPx(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 interface PDFEditorViewProps {
   setActiveView: (view: ActiveView) => void;
   onOpenWalkthrough: () => void;
@@ -81,22 +85,33 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   useEffect(() => {
     if (!isPendingSent || !documentData?.id) return;
+    let active = true;
+    let requestInFlight = false;
 
     const loadOpenStatus = () => {
+      if (requestInFlight || document.visibilityState === "hidden") return;
+      requestInFlight = true;
       fetch(`/api/documents?id=${encodeURIComponent(documentData.id)}`)
         .then((res) => res.json())
         .then((data) => {
+          if (!active) return;
           const found = data.documents?.[0];
           if (!found) return;
           setEmailOpened(!!(found.emailOpened || found.emailOpenedAt || found.emailClickedAt));
           setEmailOpenedAt(found.lastEmailOpenedAt || found.emailOpenedAt || "");
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          requestInFlight = false;
+        });
     };
 
     loadOpenStatus();
-    const poll = window.setInterval(loadOpenStatus, 10000);
-    return () => window.clearInterval(poll);
+    const poll = window.setInterval(loadOpenStatus, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(poll);
+    };
   }, [isPendingSent, documentData?.id]);
 
   // Paper canvas ref for position calculations
@@ -114,23 +129,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
 
   const sidebarFileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const activeFileUrl =
-      documentData?.fileUrl ||
-      (typeof window !== "undefined"
-        ? localStorage.getItem("dochub_pdf_data") || sessionStorage.getItem("dochub_active_fileUrl")
-        : null);
-
-    if (activeFileUrl) {
-      getPdfLayoutInfo(activeFileUrl).then(({ pageCount, pageHeightPx }) => {
-        setDetectedPages(pageCount);
-        setDetectedPageHeightPx(pageHeightPx);
-      });
-    } else if (documentData?.pages) {
-      setDetectedPages(documentData.pages);
-    }
-  }, [documentData?.id, documentData?.fileUrl]);
 
   // Route pinch-to-zoom / Ctrl+scroll on the canvas into the shared zoomLevel state,
   // so the document and every placed field (name, date, signature) zoom together as one.
@@ -180,10 +178,20 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         ]);
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
         const images: string[] = [];
+        const firstPage = await pdf.getPage(1);
+        const firstViewport = firstPage.getViewport({ scale: 1 });
+        const firstRenderScale = 794 / firstViewport.width;
+        if (!cancelled) {
+          setDetectedPages(pdf.numPages || 1);
+          setDetectedPageHeightPx(
+            Math.round(firstViewport.height * firstRenderScale)
+          );
+        }
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
           if (cancelled) return;
-          const page = await pdf.getPage(pageNumber);
+          const page =
+            pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const baseViewport = page.getViewport({ scale: 1 });
           const viewport = page.getViewport({ scale: 794 / baseViewport.width });
           const canvas = document.createElement("canvas");
@@ -194,9 +202,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
           await page.render({ canvas, canvasContext: context, viewport }).promise;
           images.push(canvas.toDataURL("image/jpeg", 0.92));
+          if (!cancelled) setRenderedPdfPages([...images]);
         }
-
-        if (!cancelled) setRenderedPdfPages(images);
       } catch (error) {
         console.warn("PDF editor rendering failed:", error);
       } finally {
@@ -257,11 +264,27 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   useEffect(() => {
     if (typeof window !== "undefined" && placedFields.length > 0) {
-      localStorage.setItem("dochub_placed_fields", JSON.stringify(placedFields));
+      const cacheTimer = window.setTimeout(() => {
+        try {
+          const lightweightFields = placedFields.map((field) =>
+            field.value?.startsWith("data:image")
+              ? { ...field, value: "" }
+              : field
+          );
+          localStorage.setItem(
+            "dochub_placed_fields",
+            JSON.stringify(lightweightFields)
+          );
+        } catch {
+          // Local cache is optional; the document state remains authoritative.
+        }
+      }, 500);
+      return () => window.clearTimeout(cacheTimer);
     }
   }, [placedFields]);
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<DocumentField | null>(null);
 
   // Document Building Blocks definition
   const buildingBlocks = [
@@ -395,12 +418,64 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     if (activeFieldId === id) setActiveFieldId(null);
   };
 
+  const copyField = (id: string) => {
+    const field = placedFields.find((item) => item.id === id);
+    if (!field) return;
+    setCopiedField({
+      ...field,
+      options: field.options ? [...field.options] : undefined,
+    });
+  };
+
+  const pasteField = () => {
+    if (!copiedField) return;
+    const pastedField: DocumentField = {
+      ...copiedField,
+      id: `field-${Date.now()}`,
+      x: Math.min(96, copiedField.x + 2),
+      y: Math.min(99, copiedField.y + 1),
+      options: copiedField.options ? [...copiedField.options] : undefined,
+    };
+    setPlacedFields((fields) => [...fields, pastedField]);
+    setActiveFieldId(pastedField.id);
+  };
+
+  useEffect(() => {
+    const handleFieldClipboard = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (target?.tagName === "SELECT" || target?.isContentEditable) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "c" && activeFieldId) {
+        const textControl =
+          target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+            ? target
+            : null;
+        if (
+          textControl &&
+          textControl.selectionStart !== textControl.selectionEnd
+        ) {
+          return;
+        }
+        event.preventDefault();
+        copyField(activeFieldId);
+      }
+      if (event.key.toLowerCase() === "v" && copiedField) {
+        event.preventDefault();
+        pasteField();
+      }
+    };
+
+    window.addEventListener("keydown", handleFieldClipboard);
+    return () => window.removeEventListener("keydown", handleFieldClipboard);
+  }, [activeFieldId, copiedField, placedFields]);
+
   // Dragging field around canvas
   const handleFieldMouseDown = (id: string, e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    const isMoveHandle = target.closest(".move-handle");
-
-    if (!isMoveHandle && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.closest(".resize-handle"))) {
+    if (target.closest(".resize-handle")) {
       return;
     }
 
@@ -461,7 +536,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
-      const newWidth = Math.max(80, Math.min(680, startWidth + deltaX));
+      const newWidth = roundPx(Math.max(80, Math.min(680, startWidth + deltaX)));
 
       setPlacedFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, width: newWidth } : f))
@@ -490,7 +565,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
-      const newHeight = Math.max(16, Math.min(400, startHeight + deltaY));
+      const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
       setPlacedFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, height: newHeight } : f))
@@ -522,8 +597,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
       const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
-      const newWidth = Math.max(60, Math.min(680, startWidth + deltaX));
-      const newHeight = Math.max(16, Math.min(400, startHeight + deltaY));
+      const newWidth = roundPx(Math.max(60, Math.min(680, startWidth + deltaX)));
+      const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
       setPlacedFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, width: newWidth, height: newHeight } : f))
@@ -1160,8 +1235,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               {/* Precise Draggable & Resizable Placed Fields */}
               {placedFields.map((field) => {
                 const isActive = activeFieldId === field.id;
-                const fieldWidth = field.width || 200;
-                const fieldHeight = field.height || 34;
+                const fieldWidth = roundPx(field.width || 200);
+                const fieldHeight = roundPx(field.height || 34);
 
                 return (
                   <div
@@ -1363,8 +1438,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                             +
                           </button>
                         </div>
-
-                        <div className="h-3.5 w-[1px] bg-slate-700"></div>
 
                         {/* Delete button */}
                         <button

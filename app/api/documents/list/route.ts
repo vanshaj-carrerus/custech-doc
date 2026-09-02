@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { DocumentRecord } from "@/models/Document";
 
+const MONGO_ID_RE = /^[a-fA-F0-9]{24}$/;
+
 export async function GET(request: Request) {
   try {
     await connectToDatabase();
@@ -31,7 +33,17 @@ export async function GET(request: Request) {
       });
     }
 
-    const docs = await DocumentRecord.find(query).sort({ createdAt: -1 }).limit(50).lean();
+    const documentsQuery = DocumentRecord.find(query)
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select("-fileUrl");
+    if (!docId) {
+      // Dashboard rows only need metadata. Returning every Base64 PDF here can
+      // create a response hundreds of megabytes large and make old data appear
+      // to be missing while the browser waits for it.
+      documentsQuery.select("-placedFields -filledFields");
+    }
+    const docs = await documentsQuery.lean();
 
     return NextResponse.json({
       success: true,
@@ -50,7 +62,7 @@ export async function GET(request: Request) {
         pages: d.pages || 1,
         status: d.status || "Completed",
         size: d.size || "1.2 MB",
-        fileUrl: d.fileUrl,
+        fileUrl: docId ? `/api/documents/${d._id.toString()}/file` : undefined,
         fileType: d.fileType,
         placedFields: d.placedFields,
         filledFields: d.filledFields || d.placedFields,
@@ -82,33 +94,29 @@ export async function DELETE(request: Request) {
     const docId = searchParams.get("id");
     const requesterEmail = searchParams.get("requesterEmail")?.toLowerCase();
 
-    if (!docId) {
+    if (!docId || !MONGO_ID_RE.test(docId) || !requesterEmail) {
       return NextResponse.json(
-        { success: false, message: "Document id is required" },
+        { success: false, message: "Valid document id and requester email are required" },
         { status: 400 }
       );
     }
 
-    const doc = await DocumentRecord.findById(docId);
-    if (!doc) {
+    const result = await DocumentRecord.deleteOne({
+      _id: docId,
+      $or: [
+        { senderEmail: requesterEmail },
+        { recipientEmail: requesterEmail },
+      ],
+    });
+
+    if (result.deletedCount === 0) {
       return NextResponse.json(
-        { success: false, message: "Document not found" },
+        { success: false, message: "Document not found or you don't have permission" },
         { status: 404 }
       );
     }
 
-    const isOwner =
-      requesterEmail &&
-      (doc.senderEmail?.toLowerCase() === requesterEmail ||
-        doc.recipientEmail?.toLowerCase() === requesterEmail);
-    if (!isOwner) {
-      return NextResponse.json(
-        { success: false, message: "You don't have permission to delete this document" },
-        { status: 403 }
-      );
-    }
-
-    await DocumentRecord.findByIdAndDelete(docId);
+    global.documentFileCache?.delete(docId);
 
     return NextResponse.json({ success: true, message: "Document deleted" });
   } catch (error: any) {

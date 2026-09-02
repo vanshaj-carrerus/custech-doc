@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ActiveView, RecentDoc, ActiveDocument, UserSession } from "@/types/dochub";
 import {
   UploadCloud,
@@ -61,6 +61,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [deleteError, setDeleteError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
+  const [documentsError, setDocumentsError] = useState("");
+  const documentsRequestInFlight = useRef(false);
   const [reminderNotice, setReminderNotice] = useState<{
     type: "success" | "error";
     message: string;
@@ -71,9 +75,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   useEffect(() => {
     if (!userEmail) return;
+    let active = true;
+    const cacheKey = `dochub_document_list_${userEmail}`;
 
-    const loadDocs = () => {
-      fetch(`/api/documents?email=${encodeURIComponent(userEmail)}`)
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      const parsed = cached ? JSON.parse(cached) : null;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setMongoDocs(parsed);
+        setIsLoadingDocs(false);
+      }
+    } catch {}
+
+    const loadDocs = (initialLoad = false) => {
+      if (documentsRequestInFlight.current) return;
+      documentsRequestInFlight.current = true;
+      if (initialLoad) setIsLoadingDocs(true);
+      fetch(`/api/documents?email=${encodeURIComponent(userEmail)}`, {
+        cache: "no-store",
+      })
         .then(async (res) => {
           const contentType = res.headers.get("content-type") || "";
           if (!res.ok || !contentType.includes("application/json")) {
@@ -82,15 +102,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           return res.json();
         })
         .then((data) => {
-          if (data.success && data.documents) {
+          if (active && data.success && Array.isArray(data.documents)) {
             setMongoDocs(data.documents);
+            setDocumentsError("");
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify(data.documents));
+            } catch {}
           }
         })
-        .catch((err) => console.warn("MongoDB fetch notice:", err));
+        .catch((err) => {
+          console.warn("MongoDB fetch notice:", err);
+          if (active) setDocumentsError("Could not refresh documents. Showing saved data.");
+        })
+        .finally(() => {
+          documentsRequestInFlight.current = false;
+          if (active && initialLoad) setIsLoadingDocs(false);
+        });
     };
 
-    loadDocs();
-    const poll = window.setInterval(loadDocs, 10000);
+    loadDocs(true);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadDocs(false);
+    }, 60000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") loadDocs(false);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     if (typeof window !== "undefined") {
       const savedCompleted = localStorage.getItem(`dochub_completed_${userEmail}`);
@@ -120,7 +157,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       }
     }
 
-    return () => window.clearInterval(poll);
+    return () => {
+      active = false;
+      documentsRequestInFlight.current = false;
+      window.clearInterval(poll);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [userEmail]);
 
   const defaultDocs: RecentDoc[] = mongoDocs;
@@ -202,6 +244,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
     } finally {
       setRemindingId(null);
+    }
+  };
+
+  const handleOpenDocument = async (doc: RecentDoc) => {
+    if (openingId) return;
+    setOpeningId(doc.id);
+    let selectedDoc = doc;
+
+    try {
+      const response = await fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`);
+      const data = await response.json();
+      if (response.ok && data.success && data.documents?.[0]) {
+        selectedDoc = { ...doc, ...data.documents[0] };
+      }
+    } catch (error) {
+      console.warn("Full document fetch failed:", error);
+    } finally {
+      if (onSelectDoc) {
+        onSelectDoc({
+          id: selectedDoc.id,
+          name: selectedDoc.title,
+          size: selectedDoc.size,
+          pages: selectedDoc.pages,
+          status: selectedDoc.status,
+          fileUrl: selectedDoc.fileUrl,
+          fileType: selectedDoc.fileType,
+          placedFields: selectedDoc.placedFields,
+          filledFields: selectedDoc.filledFields,
+          recipientEmail: selectedDoc.recipientEmail,
+          recipientName: selectedDoc.recipientName,
+          emailOpened: wasEmailOpened(selectedDoc),
+          emailOpenedAt:
+            selectedDoc.emailOpenedAt || selectedDoc.lastEmailOpenedAt,
+        });
+      }
+      setOpeningId(null);
+      setActiveView("editor");
     }
   };
 
@@ -307,7 +386,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <span>Recent Documents</span>
-                <span className="text-xs font-normal text-slate-400">({filteredDocs.length})</span>
+                <span className="text-xs font-normal text-slate-400">
+                  {isLoadingDocs && defaultDocs.length === 0
+                    ? "(loading...)"
+                    : `(${filteredDocs.length})`}
+                </span>
               </h2>
               <p className="text-xs text-slate-500">
                 Access your imported, pending, and completed candidate agreements
@@ -345,6 +428,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            {documentsError && (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-700">
+                {documentsError}
+              </div>
+            )}
             {reminderNotice && (
               <div
                 className={`flex items-center justify-between gap-3 border-b px-4 py-3 text-xs font-semibold ${
@@ -365,30 +453,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             )}
             <div className="divide-y divide-slate-100">
-              {filteredDocs.length > 0 ? (
+              {isLoadingDocs && defaultDocs.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 p-8 text-xs font-semibold text-primary">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading your previous documents...
+                </div>
+              ) : filteredDocs.length > 0 ? (
                 filteredDocs.map((doc) => (
                   <div
                     key={doc.id}
-                    onClick={() => {
-                      if (onSelectDoc) {
-                        onSelectDoc({
-                          id: doc.id,
-                          name: doc.title,
-                          size: doc.size,
-                          pages: doc.pages,
-                          status: doc.status as any,
-                          fileUrl: doc.fileUrl,
-                          fileType: doc.fileType,
-                          placedFields: doc.placedFields,
-                          filledFields: doc.filledFields,
-                          recipientEmail: doc.recipientEmail,
-                          recipientName: doc.recipientName,
-                          emailOpened: wasEmailOpened(doc),
-                          emailOpenedAt: doc.emailOpenedAt || doc.lastEmailOpenedAt,
-                        });
-                      }
-                      setActiveView("editor");
-                    }}
+                    onClick={() => void handleOpenDocument(doc)}
                     className="flex items-center justify-between p-4 hover:bg-slate-50/80 transition cursor-pointer group"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
@@ -488,7 +562,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           className="p-1.5 hover:bg-slate-100 rounded-lg transition"
                           title="View PDF"
                         >
-                          <Eye className="w-4 h-4 text-sky-600" />
+                          {openingId === doc.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-sky-600" />
+                          )}
                         </button>
                         <button
                           className="p-1.5 hover:bg-slate-100 rounded-lg transition"

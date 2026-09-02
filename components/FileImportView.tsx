@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { ActiveView, UploadedFile, ActiveDocument } from "@/types/dochub";
-import { detectPdfPageCount } from "@/lib/pdfUtils";
 import {
   Upload,
   ChevronDown,
@@ -118,26 +117,24 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
     }
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     const fileList = Array.from(selectedFiles);
-    const newUploadedFiles: UploadedFile[] = await Promise.all(
-      fileList.map(async (file, index) => {
+    const newUploadedFiles: UploadedFile[] = fileList.map((file, index) => {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        const pageCount = await detectPdfPageCount(file);
         return {
           id: `file-${Date.now()}-${index}`,
           name: file.name,
           size: sizeMb === "0.0" ? `${(file.size / 1024).toFixed(0)} KB` : `${sizeMb} MB`,
-          pages: pageCount,
+          // The editor's single PDF.js pass determines the real page count.
+          pages: 1,
           progress: 100,
           status: "ready",
           fileObject: file,
         };
-      })
-    );
+      });
 
     setFiles((prev) => [...prev, ...newUploadedFiles]);
     if (fileInputRef.current) fileInputRef.current.value = "";
