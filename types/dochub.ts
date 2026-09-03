@@ -41,6 +41,7 @@ export interface RecentDoc {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  textEdits?: Record<string, string>;
   senderEmail?: string;
   recipientEmail?: string;
   recipientName?: string;
@@ -62,6 +63,7 @@ export interface ActiveDocument {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  textEdits?: Record<string, string>;
   status?: string;
   recipientEmail?: string;
   recipientName?: string;

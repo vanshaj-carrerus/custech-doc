@@ -13,6 +13,7 @@ export interface IDocumentRecord extends Document {
   message?: string;
   placedFields?: any[];
   filledFields?: any[];
+  textEdits?: Record<string, string>;
   status: "Draft" | "Processing" | "Pending Sign" | "Completed";
   sentAt?: Date;
   emailOpened?: boolean;
@@ -42,6 +43,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     message: { type: String },
     placedFields: { type: Array, default: [] },
     filledFields: { type: Array, default: [] },
+    textEdits: { type: Schema.Types.Mixed, default: {} },
     status: {
       type: String,
       enum: ["Draft", "Processing", "Pending Sign", "Completed"],

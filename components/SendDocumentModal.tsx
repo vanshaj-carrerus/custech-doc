@@ -178,6 +178,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           senderEmail,
           fileType,
           placedFields: documentData?.placedFields || [],
+          textEdits: documentData?.textEdits || {},
         }),
       });
       const draftData = await draftRes.json();
@@ -214,6 +215,11 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       (typeof window !== "undefined" && localStorage.getItem("dochub_placed_fields")
         ? JSON.parse(localStorage.getItem("dochub_placed_fields")!)
         : []);
+    const activeTextEdits =
+      documentData?.textEdits ||
+      (typeof window !== "undefined" && localStorage.getItem("dochub_text_edits")
+        ? JSON.parse(localStorage.getItem("dochub_text_edits")!)
+        : {});
 
     if (!activeFileUrl) {
       setSendError("The document file is missing. Upload the file again, then send it.");
@@ -247,6 +253,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
             senderEmail,
             fileType: activeFileType,
             placedFields: activePlacedFields,
+            textEdits: activeTextEdits,
           }),
         });
         const draftData = await draftRes.json();
@@ -274,6 +281,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           pages: documentData?.pages || 1,
           fileType: activeFileType,
           placedFields: activePlacedFields,
+          textEdits: activeTextEdits,
           senderEmail: senderEmail,
           recipientEmail: recipientEmail,
           recipientName: recipientName || recipientEmail,

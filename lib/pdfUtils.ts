@@ -82,6 +82,93 @@ export async function getPdfjsLib() {
   return getPdfjs();
 }
 
+/**
+ * One word/run of text on a rendered PDF page, positioned both in on-screen
+ * pixels (for the editable overlay) and in raw PDF point-space (for baking
+ * an edit into an exported/downloaded PDF with pdf-lib, whose coordinate
+ * system already matches pdf.js's unscaled item.transform).
+ */
+export interface PdfTextItem {
+  id: string; // `${pageIndex}-${itemIndexOnPage}` — stable for a given file, used as the textEdits key
+  pageIndex: number;
+  original: string;
+  leftPx: number;
+  topPx: number; // relative to the top of the whole stacked-pages canvas
+  widthPx: number;
+  fontSizePx: number;
+  angleDeg: number;
+  fontFamily: string;
+  pdfX: number;
+  pdfY: number;
+  pdfWidth: number;
+  pdfFontSize: number;
+}
+
+/**
+ * Extracts every text run on one already-rendered PDF page, positioned to
+ * line up pixel-for-pixel with a canvas rendered using the same `viewport`.
+ * Mirrors the affine-transform math pdf.js's own TextLayer uses internally
+ * (see pdfjs-dist/build/pdf.mjs, TextLayer#appendText) so the overlay lines
+ * up without depending on their CSS-variable-driven text layer machinery.
+ */
+interface PdfPageLike {
+  getTextContent: () => Promise<{
+    items: unknown[];
+    styles: Record<string, { fontFamily?: string; vertical?: boolean }>;
+  }>;
+}
+
+interface PdfViewportLike {
+  transform: number[];
+}
+
+export async function extractPageTextItems(
+  page: PdfPageLike,
+  viewport: PdfViewportLike,
+  pdfjsUtil: { transform: (m1: number[], m2: number[]) => number[] },
+  pageIndex: number,
+  pageTopOffsetPx: number
+): Promise<PdfTextItem[]> {
+  const textContent = await page.getTextContent();
+  const scale = Math.hypot(viewport.transform[0], viewport.transform[1]);
+  const items: PdfTextItem[] = [];
+  let index = 0;
+
+  for (const rawItem of textContent.items) {
+    const raw = rawItem as { str?: string; fontName?: string; transform?: number[]; width?: number };
+    if (typeof raw.str !== "string" || !raw.str.trim() || !raw.transform) continue;
+
+    const style = textContent.styles?.[raw.fontName || ""];
+    const tx = pdfjsUtil.transform(viewport.transform, raw.transform);
+    const angle = Math.atan2(tx[1], tx[0]);
+    const fontHeightPx = Math.hypot(tx[2], tx[3]);
+    const ascentPx = fontHeightPx * 0.8;
+
+    const leftPx = angle === 0 ? tx[4] : tx[4] + ascentPx * Math.sin(angle);
+    const topPx = angle === 0 ? tx[5] - ascentPx : tx[5] - ascentPx * Math.cos(angle);
+    const fontHeightRaw = Math.hypot(raw.transform[2], raw.transform[3]);
+
+    items.push({
+      id: `${pageIndex}-${index}`,
+      pageIndex,
+      original: raw.str,
+      leftPx,
+      topPx: topPx + pageTopOffsetPx,
+      widthPx: (raw.width || 0) * scale,
+      fontSizePx: fontHeightPx,
+      angleDeg: angle * (180 / Math.PI),
+      fontFamily: style?.fontFamily || "sans-serif",
+      pdfX: raw.transform[4],
+      pdfY: raw.transform[5],
+      pdfWidth: raw.width || 0,
+      pdfFontSize: fontHeightRaw,
+    });
+    index++;
+  }
+
+  return items;
+}
+
 export function detectPdfPageCount(dataUrlOrFile: string | File): Promise<number> {
   return getPdfLayoutInfo(dataUrlOrFile).then((info) => info.pageCount);
 }

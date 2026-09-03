@@ -86,6 +86,7 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
 
       try {
         localStorage.removeItem("dochub_completed_fields");
+        localStorage.removeItem("dochub_text_edits");
         localStorage.setItem("dochub_placed_fields", JSON.stringify(detectedFields || []));
         localStorage.setItem("dochub_pdf_type", activeDoc.fileType || "application/pdf");
         localStorage.setItem("dochub_pdf_name", activeDoc.name);

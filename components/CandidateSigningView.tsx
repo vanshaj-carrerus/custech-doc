@@ -5,6 +5,8 @@ import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
 import {
   getPdfjsLib,
   toUint8Array,
+  extractPageTextItems,
+  PdfTextItem,
 } from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
@@ -24,8 +26,6 @@ import {
   Eraser,
   X,
   RotateCcw,
-  Type,
-  Edit3,
   Download,
   Printer,
   Eye,
@@ -156,8 +156,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   // Signature Modal state
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
   const [activeSigFieldId, setActiveSigFieldId] = useState<string | null>(null);
-  const [sigMode, setSigMode] = useState<"draw" | "type">("draw");
-  const [typedSig, setTypedSig] = useState("");
   const [penColor, setPenColor] = useState("#1d4ed8");
 
   // Canvas ref for signature drawing pad
@@ -172,6 +170,13 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const [detectedPageHeightPx, setDetectedPageHeightPx] = useState<number | null>(null);
   const [renderedPdfPages, setRenderedPdfPages] = useState<string[]>([]);
   const [isRenderingPdf, setIsRenderingPdf] = useState(false);
+  // Baked-in overrides of the PDF's own text, made by the recruiter in the
+  // editor — only computed/rendered when the document actually has any, since
+  // this candidate-facing view has no reason to pay for text extraction otherwise.
+  const [textOverlayItems, setTextOverlayItems] = useState<PdfTextItem[]>([]);
+  const [textStackHeightPx, setTextStackHeightPx] = useState(0);
+  const textEdits = documentData?.textEdits || {};
+  const hasTextEdits = Object.keys(textEdits).length > 0;
 
   const pageCount = Math.max(1, detectedPages || documentData?.pages || 1);
   const pageHeightPx = detectedPageHeightPx || 1050;
@@ -183,12 +188,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   useEffect(() => {
     if (!activeFileUrl || isImageDoc) {
       setRenderedPdfPages([]);
+      setTextOverlayItems([]);
       setIsRenderingPdf(false);
       return;
     }
 
     let cancelled = false;
     setRenderedPdfPages([]);
+    setTextOverlayItems([]);
     setIsRenderingPdf(true);
 
     const renderPages = async () => {
@@ -199,6 +206,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         ]);
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
         const images: string[] = [];
+        const textItems: PdfTextItem[] = [];
+        let pageTopOffsetPx = 0;
         const firstPage = await pdf.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
         const firstRenderScale = 794 / firstViewport.width;
@@ -229,6 +238,24 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           }).promise;
           images.push(canvas.toDataURL("image/jpeg", 0.9));
           if (!cancelled) setRenderedPdfPages([...images]);
+
+          if (hasTextEdits) {
+            try {
+              const pageTextItems = await extractPageTextItems(
+                page,
+                viewport,
+                pdfjsLib.Util,
+                pageNumber - 1,
+                pageTopOffsetPx
+              );
+              textItems.push(...pageTextItems);
+              if (!cancelled) setTextOverlayItems([...textItems]);
+            } catch (textError) {
+              console.warn("PDF text-layer extraction failed:", textError);
+            }
+          }
+          pageTopOffsetPx += canvas.height;
+          if (!cancelled) setTextStackHeightPx(pageTopOffsetPx);
         }
       } catch (error) {
         console.warn("Responsive PDF rendering failed:", error);
@@ -241,7 +268,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeFileUrl, isImageDoc]);
+  }, [activeFileUrl, isImageDoc, hasTextEdits]);
 
   useEffect(() => {
     const viewport = documentViewportRef.current;
@@ -324,14 +351,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   const applySignature = () => {
     if (!activeSigFieldId) return;
 
-    if (sigMode === "draw") {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const dataUrl = canvas.toDataURL("image/png");
-        handleFieldValueChange(activeSigFieldId, dataUrl);
-      }
-    } else {
-      handleFieldValueChange(activeSigFieldId, typedSig || "Candidate Signature");
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL("image/png");
+      handleFieldValueChange(activeSigFieldId, dataUrl);
     }
 
     setIsSigModalOpen(false);
@@ -498,6 +521,50 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                   <p className="max-w-sm text-xs text-slate-500">
                     The original file could not be found. Please ask the sender to upload and send the document again.
                   </p>
+                </div>
+              )}
+
+              {/* Baked-in overrides of the PDF's own text, made by the recruiter in the editor */}
+              {hasTextEdits && textStackHeightPx > 0 && (
+                <div className="absolute inset-0 z-10 pointer-events-none">
+                  {textOverlayItems
+                    .filter((item) => item.id in textEdits)
+                    .map((item) => {
+                      const editedText = textEdits[item.id];
+                      const editedLength = editedText.length;
+                      const coverWidthPx =
+                        Math.max(
+                          item.widthPx,
+                          item.widthPx * (editedLength / (item.original.length || 1)),
+                          6
+                        ) * documentScale;
+                      const boxHeightPx = Math.max(item.fontSizePx * 1.3, 14) * documentScale;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="absolute bg-white"
+                          style={{
+                            left: `${(item.leftPx / 794) * 100}%`,
+                            top: `${((item.topPx - item.fontSizePx * 0.2) / textStackHeightPx) * 100}%`,
+                            width: coverWidthPx,
+                            height: boxHeightPx,
+                          }}
+                        >
+                          <div
+                            className="whitespace-pre leading-none"
+                            style={{
+                              fontSize: item.fontSizePx * documentScale,
+                              fontFamily: item.fontFamily,
+                              lineHeight: 1.15,
+                              color: "#0f172a",
+                            }}
+                          >
+                            {editedText}
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               )}
 
@@ -767,113 +834,60 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               </button>
             </div>
 
-            {/* Signature Mode Tabs */}
-            <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setSigMode("draw")}
-                className={`flex-1 py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
-                  sigMode === "draw"
-                    ? "bg-emerald-600 text-white shadow-md"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>Draw Signature ✍️</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSigMode("type")}
-                className={`flex-1 py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
-                  sigMode === "type"
-                    ? "bg-emerald-600 text-white shadow-md"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Type className="w-3.5 h-3.5" />
-                <span>Type Signature 🔤</span>
-              </button>
-            </div>
-
-            {/* Mode Content */}
-            {sigMode === "draw" ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
-                  <span className="hidden sm:inline">Draw your signature inside the canvas box:</span>
-                  <span className="sm:hidden">Draw your signature:</span>
-                  <div className="flex items-center gap-2">
-                    {/* Pen colors */}
-                    <button
-                      type="button"
-                      onClick={() => setPenColor("#1d4ed8")}
-                      className={`w-5 h-5 rounded-full bg-blue-600 border-2 ${
-                        penColor === "#1d4ed8" ? "border-white scale-110" : "border-transparent"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPenColor("#0f172a")}
-                      className={`w-5 h-5 rounded-full bg-slate-900 border-2 ${
-                        penColor === "#0f172a" ? "border-white scale-110" : "border-transparent"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPenColor("#047857")}
-                      className={`w-5 h-5 rounded-full bg-emerald-600 border-2 ${
-                        penColor === "#047857" ? "border-white scale-110" : "border-transparent"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={clearCanvas}
-                      className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 text-[10px] font-bold transition ml-2"
-                    >
-                      <RotateCcw className="w-3 h-3" /> Clear
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border-2 border-dashed border-emerald-500/50 p-2 overflow-hidden flex justify-center">
-                  <canvas
-                    ref={canvasRef}
-                    width={440}
-                    height={160}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    className="w-full h-[130px] sm:h-[160px] bg-slate-50 rounded-xl cursor-crosshair touch-none"
+            {/* Draw-only: candidates sign by hand, no typed-name option */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                <span className="hidden sm:inline">Draw your signature inside the canvas box:</span>
+                <span className="sm:hidden">Draw your signature:</span>
+                <div className="flex items-center gap-2">
+                  {/* Pen colors */}
+                  <button
+                    type="button"
+                    onClick={() => setPenColor("#1d4ed8")}
+                    className={`w-5 h-5 rounded-full bg-blue-600 border-2 ${
+                      penColor === "#1d4ed8" ? "border-white scale-110" : "border-transparent"
+                    }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setPenColor("#0f172a")}
+                    className={`w-5 h-5 rounded-full bg-slate-900 border-2 ${
+                      penColor === "#0f172a" ? "border-white scale-110" : "border-transparent"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPenColor("#047857")}
+                    className={`w-5 h-5 rounded-full bg-emerald-600 border-2 ${
+                      penColor === "#047857" ? "border-white scale-110" : "border-transparent"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={clearCanvas}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 text-[10px] font-bold transition ml-2"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Clear
+                  </button>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <label className="block text-xs font-bold text-slate-300">
-                  Type Your Signature Name:
-                </label>
-                <input
-                  type="text"
-                  value={typedSig}
-                  onChange={(e) => setTypedSig(e.target.value)}
-                  placeholder="e.g. Vanshaj Sharma"
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
 
-                {/* Preview Box */}
-                <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 text-center">
-                  <span className="text-xs text-slate-400 uppercase tracking-wider block mb-2 font-bold">
-                    Live Signature Preview:
-                  </span>
-                  <div className="text-3xl font-serif italic text-emerald-400 font-extrabold tracking-wide">
-                    {typedSig || "Your Signature"}
-                  </div>
-                </div>
+              <div className="bg-white rounded-2xl border-2 border-dashed border-emerald-500/50 p-2 overflow-hidden flex justify-center">
+                <canvas
+                  ref={canvasRef}
+                  width={440}
+                  height={160}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                  className="w-full h-[130px] sm:h-[160px] bg-slate-50 rounded-xl cursor-crosshair touch-none"
+                />
               </div>
-            )}
+            </div>
 
             {/* Modal Actions */}
             <div className="flex items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-800">

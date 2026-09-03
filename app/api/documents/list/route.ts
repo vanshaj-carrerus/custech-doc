@@ -52,7 +52,7 @@ export async function GET(request: Request) {
       // Dashboard rows only need metadata. Returning every Base64 PDF here can
       // create a response hundreds of megabytes large and make old data appear
       // to be missing while the browser waits for it.
-      documentsQuery.select("-placedFields -filledFields");
+      documentsQuery.select("-placedFields -filledFields -textEdits");
     }
     const docs = await documentsQuery.lean();
 
@@ -77,6 +77,7 @@ export async function GET(request: Request) {
         fileType: d.fileType,
         placedFields: d.placedFields,
         filledFields: d.filledFields || d.placedFields,
+        textEdits: d.textEdits,
         emailOpened: !!(d.emailOpened || d.emailOpenedAt || d.emailClickedAt || d.emailViewedAt),
         emailOpenedAt: d.emailOpenedAt ? new Date(d.emailOpenedAt).toISOString() : undefined,
         lastEmailOpenedAt: d.lastEmailOpenedAt ? new Date(d.lastEmailOpenedAt).toISOString() : undefined,

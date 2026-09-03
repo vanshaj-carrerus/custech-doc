@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       senderEmail,
       fileType,
       placedFields,
+      textEdits,
     } = body;
 
     const cleanSender = String(senderEmail || "").trim().toLowerCase();
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
       fileType: fileType || "application/pdf",
       senderEmail: cleanSender,
       placedFields: placedFields || [],
+      textEdits: textEdits || {},
       status: "Draft",
     });
 
