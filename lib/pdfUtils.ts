@@ -15,11 +15,17 @@ export type PdfLayoutInfo = {
 let pdfjsLibPromise: ReturnType<typeof loadPdfjs> | null = null;
 
 async function loadPdfjs() {
-  const lib = await import("pdfjs-dist");
-  lib.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url
-  ).toString();
+  const [lib, workerModule] = await Promise.all([
+    import("pdfjs-dist"),
+    // Imported (not spun up as a dedicated Worker) so parsing runs on the main
+    // thread. Module Workers (`new Worker(url, { type: "module" })`) are what
+    // pdf.js tries first, but they're unreliable on mobile browsers and in-app
+    // webviews (Instagram/WhatsApp/etc.) — the worker can silently never
+    // respond, leaving getDocument() hanging with nothing to catch or retry.
+    // Plain dynamic import() of the same file works everywhere those don't.
+    import("pdfjs-dist/build/pdf.worker.min.mjs"),
+  ]);
+  (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = workerModule;
   return lib;
 }
 
@@ -83,28 +89,16 @@ export async function getPdfjsLib() {
 }
 
 /**
- * Loads a PDF from raw bytes. Retries with a CDN worker if the bundled
- * module worker fails — common on mobile Chrome / in-app browsers.
+ * Loads a PDF from raw bytes.
  */
 export async function loadPdfDocument(bytes: Uint8Array) {
   const pdfjsLib = await getPdfjs();
-  const options = {
+  const pdf = await pdfjsLib.getDocument({
     data: bytes,
     disableStream: true,
     disableAutoFetch: true,
-    isEvalSupported: false,
-  };
-
-  try {
-    return { pdf: await pdfjsLib.getDocument(options).promise, pdfjsLib };
-  } catch (firstError) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-    try {
-      return { pdf: await pdfjsLib.getDocument(options).promise, pdfjsLib };
-    } catch {
-      throw firstError;
-    }
-  }
+  }).promise;
+  return { pdf, pdfjsLib };
 }
 
 export function canvasToObjectUrl(
