@@ -2,7 +2,14 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveView, DocumentField, ActiveDocument, UserSession } from "@/types/dochub";
-import { getPdfjsLib, toUint8Array, extractPageTextItems, PdfTextItem } from "@/lib/pdfUtils";
+import {
+  loadPdfDocument,
+  toUint8Array,
+  extractPageTextItems,
+  canvasToObjectUrl,
+  revokePageObjectUrls,
+  PdfTextItem,
+} from "@/lib/pdfUtils";
 import {
   ArrowLeft,
   Grid,
@@ -173,17 +180,15 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     }
 
     let cancelled = false;
+    const createdUrls: string[] = [];
     setRenderedPdfPages([]);
     setTextOverlayItems([]);
     setIsRenderingPdf(true);
 
     const renderPages = async () => {
       try {
-        const [pdfjsLib, bytes] = await Promise.all([
-          getPdfjsLib(),
-          toUint8Array(activeFileUrl),
-        ]);
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const bytes = await toUint8Array(activeFileUrl);
+        const { pdf, pdfjsLib } = await loadPdfDocument(bytes);
         const images: string[] = [];
         const textItems: PdfTextItem[] = [];
         let pageTopOffsetPx = 0;
@@ -206,11 +211,13 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
-          const context = canvas.getContext("2d");
+          const context = canvas.getContext("2d", { alpha: false });
           if (!context) continue;
 
           await page.render({ canvas, canvasContext: context, viewport }).promise;
-          images.push(canvas.toDataURL("image/jpeg", 0.92));
+          const pageUrl = await canvasToObjectUrl(canvas, 0.88);
+          createdUrls.push(pageUrl);
+          images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
 
           try {
@@ -238,6 +245,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     void renderPages();
     return () => {
       cancelled = true;
+      revokePageObjectUrls(createdUrls);
     };
   }, [activeFileUrl, isImageDoc]);
 
@@ -1327,13 +1335,17 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                         <span>Rendering document...</span>
                       </div>
                     ) : (
-                      <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
-                        <iframe
-                          src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                          className="w-full border-0 pointer-events-none block"
-                          style={{ width: "100%", height: `${iframeHeightPx}px`, border: 0, margin: 0, padding: 0 }}
-                          title={docTitle}
-                        />
+                      <div
+                        className="flex w-full flex-col items-center justify-center gap-3 bg-primary/5 px-6 py-10 text-center"
+                        style={{ minHeight: `${Math.min(500, iframeHeightPx)}px` }}
+                      >
+                        <FileText className="h-10 w-10 text-primary" />
+                        <p className="text-sm font-bold text-slate-800">
+                          Could not render this PDF in the browser
+                        </p>
+                        <p className="max-w-sm text-xs text-slate-500">
+                          The pages will appear here once the file loads. Refresh the page if this stays empty.
+                        </p>
                       </div>
                     )
                 ) : (

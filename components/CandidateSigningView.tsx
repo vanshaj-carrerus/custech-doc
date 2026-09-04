@@ -3,9 +3,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ActiveDocument, UserSession, DocumentField } from "@/types/dochub";
 import {
-  getPdfjsLib,
+  loadPdfDocument,
   toUint8Array,
   extractPageTextItems,
+  canvasToObjectUrl,
+  revokePageObjectUrls,
   PdfTextItem,
 } from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
@@ -175,6 +177,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   // this candidate-facing view has no reason to pay for text extraction otherwise.
   const [textOverlayItems, setTextOverlayItems] = useState<PdfTextItem[]>([]);
   const [textStackHeightPx, setTextStackHeightPx] = useState(0);
+  const [pdfRenderError, setPdfRenderError] = useState(false);
+  const [pdfRenderAttempt, setPdfRenderAttempt] = useState(0);
   const textEdits = documentData?.textEdits || {};
   const hasTextEdits = Object.keys(textEdits).length > 0;
 
@@ -194,27 +198,29 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     }
 
     let cancelled = false;
+    const createdUrls: string[] = [];
     setRenderedPdfPages([]);
     setTextOverlayItems([]);
+    setPdfRenderError(false);
     setIsRenderingPdf(true);
 
     const renderPages = async () => {
       try {
-        const [pdfjsLib, bytes] = await Promise.all([
-          getPdfjsLib(),
-          toUint8Array(activeFileUrl),
-        ]);
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const bytes = await toUint8Array(activeFileUrl);
+        const { pdf, pdfjsLib } = await loadPdfDocument(bytes);
         const images: string[] = [];
         const textItems: PdfTextItem[] = [];
         let pageTopOffsetPx = 0;
         const firstPage = await pdf.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
-        const firstRenderScale = 794 / firstViewport.width;
+        const screenWidth =
+          typeof window !== "undefined" ? window.innerWidth || 794 : 794;
+        const targetWidth = screenWidth < 768 ? Math.min(794, Math.max(360, Math.round(screenWidth * 2))) : 794;
+        const firstRenderScale = targetWidth / firstViewport.width;
         if (!cancelled) {
           setDetectedPages(pdf.numPages || 1);
           setDetectedPageHeightPx(
-            Math.round(firstViewport.height * firstRenderScale)
+            Math.round(firstViewport.height * (794 / firstViewport.width))
           );
         }
 
@@ -223,12 +229,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           const page =
             pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const initialViewport = page.getViewport({ scale: 1 });
-          const renderScale = 794 / initialViewport.width;
-          const viewport = page.getViewport({ scale: renderScale });
+          const overlayViewport = page.getViewport({
+            scale: 794 / initialViewport.width,
+          });
+          const viewport = page.getViewport({
+            scale: targetWidth / initialViewport.width,
+          });
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
-          const context = canvas.getContext("2d");
+          const context = canvas.getContext("2d", { alpha: false });
           if (!context) continue;
 
           await page.render({
@@ -236,14 +246,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             viewport,
             canvas,
           }).promise;
-          images.push(canvas.toDataURL("image/jpeg", 0.9));
+          const pageUrl = await canvasToObjectUrl(canvas, 0.82);
+          createdUrls.push(pageUrl);
+          images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
 
           if (hasTextEdits) {
             try {
               const pageTextItems = await extractPageTextItems(
                 page,
-                viewport,
+                overlayViewport,
                 pdfjsLib.Util,
                 pageNumber - 1,
                 pageTopOffsetPx
@@ -254,11 +266,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
               console.warn("PDF text-layer extraction failed:", textError);
             }
           }
-          pageTopOffsetPx += canvas.height;
+          pageTopOffsetPx += overlayViewport.height;
           if (!cancelled) setTextStackHeightPx(pageTopOffsetPx);
         }
       } catch (error) {
         console.warn("Responsive PDF rendering failed:", error);
+        if (!cancelled) setPdfRenderError(true);
       } finally {
         if (!cancelled) setIsRenderingPdf(false);
       }
@@ -267,8 +280,9 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     renderPages();
     return () => {
       cancelled = true;
+      revokePageObjectUrls(createdUrls);
     };
-  }, [activeFileUrl, isImageDoc, hasTextEdits]);
+  }, [activeFileUrl, isImageDoc, hasTextEdits, pdfRenderAttempt]);
 
   useEffect(() => {
     const viewport = documentViewportRef.current;
@@ -503,13 +517,26 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       <span>Fitting agreement to your screen...</span>
                     </div>
                   ) : (
-                    <div className="relative w-full z-0 bg-white overflow-hidden" style={{ minHeight: `${iframeHeightPx}px` }}>
-                      <iframe
-                        src={`${activeFileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                        title={activeDocName}
-                        className="w-full min-w-0 border-0 pointer-events-none block"
-                        style={{ width: "100%", height: `${iframeHeightPx}px`, border: 0, margin: 0, padding: 0 }}
-                      />
+                    <div
+                      className="flex w-full flex-col items-center justify-center gap-3 bg-primary/5 px-6 py-10 text-center"
+                      style={{ minHeight: `${Math.min(500, iframeHeightPx)}px` }}
+                    >
+                      <FileText className="h-10 w-10 text-primary" />
+                      <p className="text-sm font-bold text-slate-800">
+                        {pdfRenderError
+                          ? "This phone browser could not draw the document pages"
+                          : "Document pages are not ready yet"}
+                      </p>
+                      <p className="max-w-sm text-xs text-slate-500">
+                        Mobile browsers cannot show a raw PDF inside the page. Tap retry to render the pages here.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPdfRenderAttempt((n) => n + 1)}
+                        className="rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
+                      >
+                        Retry preview
+                      </button>
                     </div>
                   )
                 ) : (

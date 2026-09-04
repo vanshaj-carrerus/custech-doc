@@ -53,7 +53,7 @@ export async function GET(
       .lean();
     const fileUrl = doc?.fileUrl;
 
-    if (!fileUrl) {
+    if (!doc || !fileUrl) {
       return NextResponse.json(
         { success: false, message: "Document file not found" },
         { status: 404 }
@@ -61,7 +61,29 @@ export async function GET(
     }
 
     if (/^https?:\/\//i.test(fileUrl)) {
-      return NextResponse.redirect(fileUrl);
+      // Proxy the remote file (ImageKit, etc.) instead of redirecting.
+      // A 302 to a raw PDF makes mobile Chrome show its "Open" download
+      // screen inside an iframe / after fetch, instead of the document pages.
+      const upstream = await fetch(fileUrl, { cache: "force-cache" });
+      if (!upstream.ok || !upstream.body) {
+        return NextResponse.json(
+          { success: false, message: "Could not load the stored document file" },
+          { status: 502 }
+        );
+      }
+      const contentType =
+        doc.fileType ||
+        upstream.headers.get("content-type") ||
+        "application/pdf";
+      return new Response(upstream.body, {
+        headers: {
+          "Content-Type": contentType.includes("pdf")
+            ? "application/pdf"
+            : contentType,
+          "Content-Disposition": `inline; filename="${encodeURIComponent(doc.name || "document.pdf")}"`,
+          "Cache-Control": "private, max-age=86400",
+        },
+      });
     }
 
     const dataUrl = fileUrl.match(/^data:([^;,]+)?(;base64)?,([\s\S]*)$/);

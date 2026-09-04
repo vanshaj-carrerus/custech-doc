@@ -83,6 +83,56 @@ export async function getPdfjsLib() {
 }
 
 /**
+ * Loads a PDF from raw bytes. Retries with a CDN worker if the bundled
+ * module worker fails — common on mobile Chrome / in-app browsers.
+ */
+export async function loadPdfDocument(bytes: Uint8Array) {
+  const pdfjsLib = await getPdfjs();
+  const options = {
+    data: bytes,
+    disableStream: true,
+    disableAutoFetch: true,
+    isEvalSupported: false,
+  };
+
+  try {
+    return { pdf: await pdfjsLib.getDocument(options).promise, pdfjsLib };
+  } catch (firstError) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    try {
+      return { pdf: await pdfjsLib.getDocument(options).promise, pdfjsLib };
+    } catch {
+      throw firstError;
+    }
+  }
+}
+
+export function canvasToObjectUrl(
+  canvas: HTMLCanvasElement,
+  quality = 0.82
+): Promise<string> {
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          resolve(canvas.toDataURL("image/jpeg", quality));
+          return;
+        }
+        resolve(URL.createObjectURL(blob));
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+}
+
+export function revokePageObjectUrls(urls: string[]) {
+  for (const url of urls) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
+}
+
+/**
  * One word/run of text on a rendered PDF page, positioned both in on-screen
  * pixels (for the editable overlay) and in raw PDF point-space (for baking
  * an edit into an exported/downloaded PDF with pdf-lib, whose coordinate
