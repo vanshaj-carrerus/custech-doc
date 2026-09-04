@@ -15,6 +15,7 @@ export interface IDocumentRecord extends Document {
   filledFields?: any[];
   textEdits?: Record<string, string>;
   status: "Draft" | "Processing" | "Pending Sign" | "Completed";
+  isTemplate?: boolean;
   sentAt?: Date;
   emailOpened?: boolean;
   emailOpenedAt?: Date;
@@ -49,6 +50,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
       enum: ["Draft", "Processing", "Pending Sign", "Completed"],
       default: "Completed",
     },
+    isTemplate: { type: Boolean, default: false },
     sentAt: { type: Date },
     emailOpened: { type: Boolean, default: false },
     emailOpenedAt: { type: Date },
@@ -70,6 +72,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
 // in-memory sort limit.
 DocumentSchema.index({ senderEmail: 1, createdAt: -1 });
 DocumentSchema.index({ recipientEmail: 1, createdAt: -1 });
+DocumentSchema.index({ senderEmail: 1, isTemplate: 1, createdAt: -1 });
 
 const MODEL_NAME = "DocumentRecord";
 if (mongoose.models[MODEL_NAME]) {

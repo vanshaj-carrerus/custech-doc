@@ -15,6 +15,7 @@ export async function POST(request: Request) {
       fileType,
       placedFields,
       textEdits,
+      isTemplate,
     } = body;
 
     const cleanSender = String(senderEmail || "").trim().toLowerCase();
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
       placedFields: placedFields || [],
       textEdits: textEdits || {},
       status: "Draft",
+      isTemplate: !!isTemplate,
     });
 
     return NextResponse.json({

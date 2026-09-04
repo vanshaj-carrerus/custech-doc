@@ -10,6 +10,7 @@ import {
   Settings,
   LogOut,
   FileText,
+  LayoutTemplate,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -44,6 +45,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: "completed_docs" as ActiveView,
       label: "Completed Docs",
       icon: CheckCircle2,
+    },
+    {
+      id: "templates" as ActiveView,
+      label: "Templates",
+      icon: LayoutTemplate,
     },
   ];
 

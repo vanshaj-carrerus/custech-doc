@@ -27,8 +27,15 @@ export async function GET(request: Request) {
       }
       query._id = docId;
     } else if (email) {
-      // Strictly filter documents by user email (sender or recipient)
+      // Strictly filter documents by user email (sender or recipient).
+      // Templates are stored in the same collection but kept out of the
+      // regular dashboard/completed-docs lists unless explicitly requested.
+      // $ne (not strict equality) so documents created before this field
+      // existed — which have no isTemplate value stored at all — still count
+      // as regular documents instead of silently disappearing from the list.
+      const wantTemplates = searchParams.get("template") === "true";
       query = {
+        isTemplate: wantTemplates ? true : { $ne: true },
         $or: [
           { senderEmail: email },
           { recipientEmail: email },

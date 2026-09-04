@@ -13,6 +13,7 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { LoginView } from "@/components/LoginView";
 import { CandidateSigningView } from "@/components/CandidateSigningView";
 import { CompletedDocsView } from "@/components/CompletedDocsView";
+import { TemplatesView } from "@/components/TemplatesView";
 
 export default function Home() {
   const [activeView, setActiveView] = useState<ActiveView>("dashboard");
@@ -147,6 +148,14 @@ export default function Home() {
             <CompletedDocsView
               setActiveView={setActiveView}
               onSelectDoc={(doc) => setActiveDocument(doc)}
+              userSession={currentUserSession}
+            />
+          )}
+
+          {activeView === "templates" && (
+            <TemplatesView
+              setActiveView={setActiveView}
+              onUseTemplate={(doc) => setActiveDocument(doc)}
               userSession={currentUserSession}
             />
           )}

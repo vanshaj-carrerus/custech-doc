@@ -1,4 +1,4 @@
-export type ActiveView = 'dashboard' | 'import' | 'editor' | 'candidate_sign' | 'completed_docs';
+export type ActiveView = 'dashboard' | 'import' | 'editor' | 'candidate_sign' | 'completed_docs' | 'templates';
 
 export interface DocumentField {
   id: string;
