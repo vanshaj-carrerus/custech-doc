@@ -20,20 +20,32 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
   const [documentData, setDocumentData] = useState<ActiveDocument>();
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // Falls back to a placeholder only when the document lookup fails (e.g. no DB
   // connection) — otherwise this is replaced with the real sender's email below.
   const [recruiterEmail, setRecruiterEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    // Optionally fetch document from MongoDB API by ID
-    fetch(`/api/documents?id=${encodeURIComponent(docId)}`, { cache: "no-store" })
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError("");
+
+    // Timed out so a stalled mobile connection surfaces the retry state below
+    // instead of leaving the loading spinner running forever — fetch() has no
+    // default timeout, and mobile connections drop mid-request far more often
+    // than the wifi/ethernet desktop testing happens over.
+    fetch(`/api/documents?id=${encodeURIComponent(docId)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(20000),
+    })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Document could not be loaded");
         return data;
       })
       .then((data) => {
+        if (cancelled) return;
         if (data.success && data.documents && data.documents.length > 0) {
           const found = data.documents[0];
           if (found) {
@@ -60,17 +72,26 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
         }
       })
       .catch((err) => {
+        if (cancelled) return;
         console.warn("Doc fetch warning:", err);
+        const isNetworkFailure = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError" || err.message === "Failed to fetch");
         setLoadError(
-          err instanceof Error
-            ? err.message
-            : "This signing link is not valid. Ask the sender to send the document again."
+          isNetworkFailure
+            ? "Your connection dropped while loading this document. Check your signal and retry."
+            : err instanceof Error
+              ? err.message
+              : "This signing link is not valid. Ask the sender to send the document again."
         );
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
     fetch(`/api/documents/track/${encodeURIComponent(docId)}?event=view`).catch(() => {});
-  }, [docId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [docId, loadAttempt]);
 
   const userSession: UserSession = {
     id: "usr-recruiter",
@@ -100,6 +121,13 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
           <p className="mt-1 text-sm text-slate-500">
             {loadError || "This document could not be loaded."}
           </p>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((n) => n + 1)}
+            className="mt-4 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );

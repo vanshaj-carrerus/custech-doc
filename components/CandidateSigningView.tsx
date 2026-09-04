@@ -204,6 +204,18 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     setPdfRenderError(false);
     setIsRenderingPdf(true);
 
+    // Belt-and-suspenders watchdog: mobile connections/devices are where this
+    // pipeline is most likely to stall in a way no individual fetch timeout
+    // catches (e.g. a slow page.render() on a constrained device). Without
+    // this, a stall leaves the "Fitting agreement to your screen..." spinner
+    // running forever instead of ever reaching the retry button.
+    const watchdog = setTimeout(() => {
+      if (!cancelled) {
+        setPdfRenderError(true);
+        setIsRenderingPdf(false);
+      }
+    }, 45000);
+
     const renderPages = async () => {
       try {
         const bytes = await toUint8Array(activeFileUrl);
@@ -273,6 +285,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         console.warn("Responsive PDF rendering failed:", error);
         if (!cancelled) setPdfRenderError(true);
       } finally {
+        clearTimeout(watchdog);
         if (!cancelled) setIsRenderingPdf(false);
       }
     };
@@ -280,6 +293,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     renderPages();
     return () => {
       cancelled = true;
+      clearTimeout(watchdog);
       revokePageObjectUrls(createdUrls);
     };
   }, [activeFileUrl, isImageDoc, hasTextEdits, pdfRenderAttempt]);

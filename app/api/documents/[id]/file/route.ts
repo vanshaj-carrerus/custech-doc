@@ -64,7 +64,19 @@ export async function GET(
       // Proxy the remote file (ImageKit, etc.) instead of redirecting.
       // A 302 to a raw PDF makes mobile Chrome show its "Open" download
       // screen inside an iframe / after fetch, instead of the document pages.
-      const upstream = await fetch(fileUrl, { cache: "force-cache" });
+      // Timeout so a stalled upstream fetch fails fast with a retryable error
+      // instead of holding the serverless invocation open until the platform
+      // kills it — the candidate's browser would otherwise see nothing but a
+      // spinner that never resolves.
+      let upstream: Response;
+      try {
+        upstream = await fetch(fileUrl, { cache: "force-cache", signal: AbortSignal.timeout(20000) });
+      } catch {
+        return NextResponse.json(
+          { success: false, message: "Could not load the stored document file" },
+          { status: 502 }
+        );
+      }
       if (!upstream.ok || !upstream.body) {
         return NextResponse.json(
           { success: false, message: "Could not load the stored document file" },

@@ -52,7 +52,11 @@ export async function toUint8Array(dataUrlOrFile: string | File): Promise<Uint8A
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes;
   }
-  const res = await fetch(dataUrlOrFile);
+  // Mobile connections stall mid-request far more often than the wifi/ethernet
+  // desktop testing tends to happen over; fetch() has no default timeout, so
+  // without this an interrupted mobile download hangs the signing page's PDF
+  // loading spinner forever instead of ever reaching the retry UI.
+  const res = await fetch(dataUrlOrFile, { signal: AbortSignal.timeout(20000) });
   return new Uint8Array(await res.arrayBuffer());
 }
 
