@@ -62,6 +62,11 @@ interface PDFEditorViewProps {
   onCreateNewDocument?: () => void;
   documentData?: ActiveDocument;
   userSession?: UserSession;
+  // The Send Document popup renders outside this component (in the page shell)
+  // but shares the same window, so the field copy/paste keyboard listener below
+  // needs to know when it's open — otherwise pasting an email address into the
+  // popup's input also pastes a copied field onto the document underneath.
+  isSendModalOpen?: boolean;
 }
 
 export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
@@ -71,6 +76,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   onCreateNewDocument,
   documentData,
   userSession,
+  isSendModalOpen,
 }) => {
   const isSignedComplete =
     documentData?.status === "Completed" ||
@@ -450,6 +456,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   useEffect(() => {
     const handleFieldClipboard = (event: KeyboardEvent) => {
+      // Paused while the Send Document popup is open — its own inputs (e.g.
+      // the recipient email field) need normal copy/paste, not the document's
+      // field clipboard shortcuts.
+      if (isSendModalOpen) return;
       const target = event.target as HTMLElement | null;
       if (!(event.ctrlKey || event.metaKey)) return;
       if (target?.tagName === "SELECT" || target?.isContentEditable) {
@@ -478,7 +488,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
     window.addEventListener("keydown", handleFieldClipboard);
     return () => window.removeEventListener("keydown", handleFieldClipboard);
-  }, [activeFieldId, copiedField, placedFields]);
+  }, [activeFieldId, copiedField, placedFields, isSendModalOpen]);
 
   // Dragging field around canvas
   const handleFieldMouseDown = (id: string, e: React.MouseEvent) => {

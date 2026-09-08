@@ -168,6 +168,7 @@ export default function Home() {
               onCreateNewDocument={() => setActiveView("import")}
               documentData={activeDocument}
               userSession={currentUserSession}
+              isSendModalOpen={isSendModalOpen}
             />
           )}
         </div>
