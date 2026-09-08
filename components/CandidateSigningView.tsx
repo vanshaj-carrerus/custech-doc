@@ -9,6 +9,8 @@ import {
   canvasToObjectUrl,
   revokePageObjectUrls,
   PdfTextItem,
+  buildFilledPdfBytes,
+  downloadPdfBytes,
 } from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
@@ -388,6 +390,33 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     setIsSigModalOpen(false);
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Builds a real downloadable PDF with every field's signed value baked in,
+  // so the candidate has their own copy of the executed agreement instead of
+  // only being able to view it in-browser.
+  const handleDownloadPdf = async () => {
+    if (!activeFileUrl || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const outBytes = await buildFilledPdfBytes({
+        fileUrl: activeFileUrl,
+        isImageDoc,
+        pageCount,
+        pageHeightPx,
+        fields,
+        textEdits,
+        textOverlayItems,
+      });
+      downloadPdfBytes(outBytes, activeDocName);
+    } catch (err) {
+      console.error("Failed to generate PDF download:", err);
+      alert("Couldn't generate the PDF. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleCompleteSigning = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!allFieldsFilled) return;
@@ -470,6 +499,18 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 <span className="hidden sm:inline">Executed & E-Signed Document</span>
                 <span className="sm:hidden">Signed</span>
               </span>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={isDownloading || !activeFileUrl}
+                className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDownloading ? (
+                  <Loader2 className="w-3.5 h-3.5 text-slate-600 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                )}
+                <span className="hidden sm:inline">{isDownloading ? "Preparing..." : "Download PDF"}</span>
+              </button>
               <button
                 onClick={() => window.print()}
                 className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"

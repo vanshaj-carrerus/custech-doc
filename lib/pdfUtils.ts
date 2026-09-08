@@ -220,3 +220,181 @@ export async function extractPageTextItems(
 export function detectPdfPageCount(dataUrlOrFile: string | File): Promise<number> {
   return getPdfLayoutInfo(dataUrlOrFile).then((info) => info.pageCount);
 }
+
+interface FieldLike {
+  id: string;
+  type: string;
+  label?: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  value?: string;
+}
+
+/**
+ * Builds a real, flattened PDF (as bytes) from the source document with every
+ * field's current value (text, checkbox, signature image) drawn onto the
+ * matching page, at the position/size it has in the on-screen editor/signing
+ * view — plus any baked-in overrides of the PDF's own text. Shared by the
+ * recruiter's editor export and the candidate's signed-document download so
+ * both produce an identical rendering of "what the field overlay shows".
+ */
+export async function buildFilledPdfBytes({
+  fileUrl,
+  isImageDoc,
+  pageCount,
+  pageHeightPx,
+  fields,
+  textEdits,
+  textOverlayItems,
+}: {
+  fileUrl: string;
+  isImageDoc: boolean;
+  pageCount: number;
+  pageHeightPx: number;
+  fields: FieldLike[];
+  textEdits: Record<string, string>;
+  textOverlayItems: PdfTextItem[];
+}): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+
+  let pdfDoc;
+  if (isImageDoc) {
+    const imgBytes = await (await fetch(fileUrl)).arrayBuffer();
+    pdfDoc = await PDFDocument.create();
+    const img = fileUrl.includes("image/png")
+      ? await pdfDoc.embedPng(imgBytes)
+      : await pdfDoc.embedJpg(imgBytes);
+    const page = pdfDoc.addPage([img.width, img.height]);
+    page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+  } else {
+    const pdfBytes = await (await fetch(fileUrl)).arrayBuffer();
+    pdfDoc = await PDFDocument.load(pdfBytes);
+  }
+
+  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pages = pdfDoc.getPages();
+  const renderWidthPx = 794;
+  const totalHeightPx = pageCount * pageHeightPx;
+
+  // Standard PDF fonts only support WinAnsi (Latin-1) characters — strip anything
+  // outside that range (emoji, etc.) so one odd character can't break the export.
+  const toWinAnsiSafe = (s: string) => s.replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+
+  // Bake in-place edits to the PDF's own text: white out the original run
+  // (using its position straight from pdf.js's text content, which is
+  // already in the same point-space pdf-lib's pages use) and draw the
+  // replacement over it.
+  if (!isImageDoc && Object.keys(textEdits).length > 0) {
+    const bodyFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    for (const [id, newText] of Object.entries(textEdits)) {
+      const item = textOverlayItems.find((t) => t.id === id);
+      const pdfPage = item ? pages[item.pageIndex] : undefined;
+      if (!item || !pdfPage) continue;
+      try {
+        const coverWidth =
+          Math.max(
+            item.pdfWidth,
+            item.pdfWidth * (newText.length / (item.original.length || 1)),
+            4
+          ) + 2;
+        pdfPage.drawRectangle({
+          x: item.pdfX - 1,
+          y: item.pdfY - item.pdfFontSize * 0.3,
+          width: coverWidth,
+          height: item.pdfFontSize * 1.3,
+          color: rgb(1, 1, 1),
+        });
+        const safeText = toWinAnsiSafe(newText);
+        if (safeText.trim()) {
+          pdfPage.drawText(safeText, {
+            x: item.pdfX,
+            y: item.pdfY,
+            size: item.pdfFontSize,
+            font: bodyFont,
+            color: rgb(0.05, 0.05, 0.05),
+          });
+        }
+      } catch (textEditErr) {
+        console.warn(`Skipping text edit "${id}" in PDF export:`, textEditErr);
+      }
+    }
+  }
+
+  for (const field of fields) {
+    try {
+      const absYpx = (field.y / 100) * totalHeightPx;
+      const pageIndex = Math.min(pages.length - 1, Math.floor(absYpx / pageHeightPx));
+      const withinPageYpx = absYpx - pageIndex * pageHeightPx;
+      const pdfPage = pages[pageIndex];
+      const scale = pdfPage.getWidth() / renderWidthPx;
+
+      const xPt = (field.x / 100) * pdfPage.getWidth();
+      const wPt = (field.width || 200) * scale;
+      const hPt = (field.height || 34) * scale;
+      const topYPt = pdfPage.getHeight() - withinPageYpx * scale;
+      const bottomYPt = topYPt - hPt;
+
+      if (field.type === "signature") {
+        if (field.value?.startsWith("data:image")) {
+          const sigBytes = await (await fetch(field.value)).arrayBuffer();
+          const sigImg = field.value.includes("image/png")
+            ? await pdfDoc.embedPng(sigBytes)
+            : await pdfDoc.embedJpg(sigBytes);
+          pdfPage.drawImage(sigImg, { x: xPt, y: bottomYPt, width: wPt, height: hPt });
+        } else if (field.value) {
+          pdfPage.drawText(toWinAnsiSafe(field.value), {
+            x: xPt + 2,
+            y: bottomYPt + hPt * 0.3,
+            size: Math.min(18, hPt * 0.6),
+            font,
+            color: rgb(0.05, 0.15, 0.55),
+          });
+        }
+      } else if (field.type === "checkbox") {
+        pdfPage.drawText(toWinAnsiSafe(`[X] ${field.value || ""}`), {
+          x: xPt + 2,
+          y: bottomYPt + hPt * 0.3,
+          size: Math.min(12, hPt * 0.5),
+          font,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+      } else if (field.type === "image" || field.type === "attachment") {
+        if (field.value?.startsWith("data:image")) {
+          const imgBytes2 = await (await fetch(field.value)).arrayBuffer();
+          const embedded = field.value.includes("image/png")
+            ? await pdfDoc.embedPng(imgBytes2)
+            : await pdfDoc.embedJpg(imgBytes2);
+          pdfPage.drawImage(embedded, { x: xPt, y: bottomYPt, width: wPt, height: hPt });
+        }
+      } else if (field.value) {
+        pdfPage.drawText(toWinAnsiSafe(String(field.value)), {
+          x: xPt + 2,
+          y: bottomYPt + hPt * 0.3,
+          size: Math.min((field.fontSize || 14) * scale, hPt * 0.75),
+          font,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+      }
+    } catch (fieldErr) {
+      console.warn(`Skipping field "${field.label}" in PDF export:`, fieldErr);
+    }
+  }
+
+  return pdfDoc.save();
+}
+
+/** Triggers a browser download of a PDF built by {@link buildFilledPdfBytes}. */
+export function downloadPdfBytes(bytes: Uint8Array, filename: string) {
+  const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.replace(/\.pdf$/i, "") + ".pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
