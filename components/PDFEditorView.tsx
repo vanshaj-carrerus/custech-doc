@@ -5,10 +5,8 @@ import { ActiveView, DocumentField, ActiveDocument, UserSession } from "@/types/
 import {
   loadPdfDocument,
   toUint8Array,
-  extractPageTextItems,
   canvasToObjectUrl,
   revokePageObjectUrls,
-  PdfTextItem,
   buildFilledPdfBytes,
   downloadPdfBytes,
 } from "@/lib/pdfUtils";
@@ -167,16 +165,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   const isImageDoc = !!(activeFileType?.includes("image") || activeFileUrl?.startsWith("data:image/"));
   const [renderedPdfPages, setRenderedPdfPages] = useState<string[]>([]);
   const [isRenderingPdf, setIsRenderingPdf] = useState(false);
-  // Every text run on the rendered pages, positioned to line up with the
-  // rasterized page images above — this is what makes the PDF's own text
-  // (e.g. the letterhead/company details) directly click-to-edit rather than
-  // just a flat picture.
-  const [textOverlayItems, setTextOverlayItems] = useState<PdfTextItem[]>([]);
 
   useEffect(() => {
     if (!activeFileUrl || isImageDoc) {
       setRenderedPdfPages([]);
-      setTextOverlayItems([]);
       setIsRenderingPdf(false);
       return;
     }
@@ -184,16 +176,13 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     let cancelled = false;
     const createdUrls: string[] = [];
     setRenderedPdfPages([]);
-    setTextOverlayItems([]);
     setIsRenderingPdf(true);
 
     const renderPages = async () => {
       try {
         const bytes = await toUint8Array(activeFileUrl);
-        const { pdf, pdfjsLib } = await loadPdfDocument(bytes);
+        const { pdf } = await loadPdfDocument(bytes);
         const images: string[] = [];
-        const textItems: PdfTextItem[] = [];
-        let pageTopOffsetPx = 0;
         const firstPage = await pdf.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
         const firstRenderScale = 794 / firstViewport.width;
@@ -221,21 +210,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           createdUrls.push(pageUrl);
           images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
-
-          try {
-            const pageTextItems = await extractPageTextItems(
-              page,
-              viewport,
-              pdfjsLib.Util,
-              pageNumber - 1,
-              pageTopOffsetPx
-            );
-            textItems.push(...pageTextItems);
-            if (!cancelled) setTextOverlayItems([...textItems]);
-          } catch (textError) {
-            console.warn("PDF text-layer extraction failed:", textError);
-          }
-          pageTopOffsetPx += canvas.height;
         }
       } catch (error) {
         console.warn("PDF editor rendering failed:", error);
@@ -316,67 +290,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       return () => window.clearTimeout(cacheTimer);
     }
   }, [placedFields]);
-
-  // Direct edits to the PDF's own text (the "cover the original run, draw the
-  // new text over it" edits made by clicking into the rendered document),
-  // keyed by the textOverlayItems id they replace.
-  const [textEdits, setTextEdits] = useState<Record<string, string>>(() => {
-    if (documentData?.textEdits && Object.keys(documentData.textEdits).length > 0) {
-      return documentData.textEdits;
-    }
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("dochub_text_edits");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {}
-      }
-    }
-    return {};
-  });
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
-  const [editingDraft, setEditingDraft] = useState("");
-
-  useEffect(() => {
-    if (documentData?.textEdits && Object.keys(documentData.textEdits).length > 0) {
-      setTextEdits(documentData.textEdits);
-    }
-  }, [documentData?.id]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && Object.keys(textEdits).length > 0) {
-      const cacheTimer = window.setTimeout(() => {
-        try {
-          localStorage.setItem("dochub_text_edits", JSON.stringify(textEdits));
-        } catch {}
-      }, 500);
-      return () => window.clearTimeout(cacheTimer);
-    }
-  }, [textEdits]);
-
-  const startEditingText = (item: PdfTextItem) => {
-    if (isCompletedDoc) return;
-    setActiveFieldId(null);
-    setEditingDraft(textEdits[item.id] ?? item.original);
-    setEditingTextId(item.id);
-  };
-
-  const commitTextEdit = (item: PdfTextItem) => {
-    setTextEdits((prev) => {
-      const next = { ...prev };
-      if (editingDraft === item.original) {
-        delete next[item.id];
-      } else {
-        next[item.id] = editingDraft;
-      }
-      return next;
-    });
-    setEditingTextId(null);
-  };
-
-  const cancelTextEdit = () => {
-    setEditingTextId(null);
-  };
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<DocumentField | null>(null);
@@ -790,8 +703,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         pageCount,
         pageHeightPx,
         fields: placedFields,
-        textEdits,
-        textOverlayItems,
+        textEdits: {},
+        textOverlayItems: [],
       });
       downloadPdfBytes(outBytes, docTitle);
     } catch (err) {
@@ -968,7 +881,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               onClick={() => {
                 if (documentData) {
                   documentData.placedFields = placedFields;
-                  documentData.textEdits = textEdits;
                 }
                 if (onOpenSendModal) onOpenSendModal();
               }}
@@ -1246,92 +1158,6 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   </div>
                 )}
                   </div>
-
-              {/* Click-to-edit overlay for the PDF's own text. In edit mode every
-                  detected text run is a click target; on a read-only/completed
-                  document only runs that were actually edited are baked in. */}
-              {(isCompletedDoc
-                ? textOverlayItems.filter((item) => item.id in textEdits)
-                : textOverlayItems
-              ).map((item) => {
-                const hasEdit = item.id in textEdits;
-                const isEditingThis = editingTextId === item.id;
-                const editedLength = (hasEdit ? textEdits[item.id] : editingDraft).length;
-                const coverWidthPx = Math.max(
-                  item.widthPx,
-                  item.widthPx * (editedLength / (item.original.length || 1)),
-                  6
-                );
-                const boxHeightPx = Math.max(item.fontSizePx * 1.3, 14);
-
-                return (
-                  <div
-                    key={item.id}
-                    className="absolute z-[3]"
-                    style={{
-                      left: item.leftPx,
-                      top: item.topPx - boxHeightPx * 0.15,
-                      minWidth: coverWidthPx,
-                      height: boxHeightPx,
-                    }}
-                  >
-                    {(hasEdit || isEditingThis) && (
-                      <div
-                        className="absolute bg-white"
-                        style={{ left: -1, right: -1, top: -1, bottom: -1 }}
-                      />
-                    )}
-                    {isEditingThis ? (
-                      <input
-                        autoFocus
-                        value={editingDraft}
-                        onChange={(e) => setEditingDraft(e.target.value)}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onBlur={() => commitTextEdit(item)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            commitTextEdit(item);
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelTextEdit();
-                          }
-                        }}
-                        className="absolute inset-0 w-full bg-white border border-blue-500 outline-none px-0.5 rounded-sm"
-                        style={{
-                          fontSize: item.fontSizePx,
-                          fontFamily: item.fontFamily,
-                          lineHeight: 1.15,
-                          minWidth: coverWidthPx,
-                        }}
-                      />
-                    ) : (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEditingText(item);
-                        }}
-                        className={`absolute inset-0 whitespace-pre leading-none ${
-                          isCompletedDoc
-                            ? ""
-                            : "cursor-text hover:bg-blue-200/50 hover:outline hover:outline-1 hover:outline-blue-400 rounded-sm"
-                        }`}
-                        style={{
-                          fontSize: item.fontSizePx,
-                          fontFamily: item.fontFamily,
-                          lineHeight: 1.15,
-                          color: hasEdit ? "#0f172a" : "transparent",
-                        }}
-                        title={isCompletedDoc ? undefined : "Click to edit this text"}
-                      >
-                        {hasEdit ? textEdits[item.id] : item.original}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
 
               {/* Precise Draggable & Resizable Placed Fields */}
               {placedFields.map((field) => {
