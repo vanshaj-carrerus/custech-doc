@@ -218,7 +218,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       }
     }, 45000);
 
-    const renderPages = async () => {
+    // One rendering pass at a given canvas resolution. Broken out so a failure
+    // (most often a canvas memory ceiling on an older/low-end phone — desktop
+    // has no such limit, which is why this only ever shows up on phones) can
+    // be retried once at a much smaller size instead of giving up outright.
+    const attemptRender = async (targetWidth: number, extractText: boolean) => {
+      const localUrls: string[] = [];
       try {
         const bytes = await toUint8Array(activeFileUrl);
         const { pdf, pdfjsLib } = await loadPdfDocument(bytes);
@@ -227,10 +232,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         let pageTopOffsetPx = 0;
         const firstPage = await pdf.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
-        const screenWidth =
-          typeof window !== "undefined" ? window.innerWidth || 794 : 794;
-        const targetWidth = screenWidth < 768 ? Math.min(794, Math.max(360, Math.round(screenWidth * 2))) : 794;
-        const firstRenderScale = targetWidth / firstViewport.width;
         if (!cancelled) {
           setDetectedPages(pdf.numPages || 1);
           setDetectedPageHeightPx(
@@ -239,7 +240,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         }
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-          if (cancelled) return;
+          if (cancelled) return { localUrls };
           const page =
             pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const initialViewport = page.getViewport({ scale: 1 });
@@ -253,7 +254,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
           const context = canvas.getContext("2d", { alpha: false });
-          if (!context) continue;
+          if (!context) throw new Error("2D canvas context unavailable");
 
           await page.render({
             canvasContext: context,
@@ -261,11 +262,11 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             canvas,
           }).promise;
           const pageUrl = await canvasToObjectUrl(canvas, 0.82);
-          createdUrls.push(pageUrl);
+          localUrls.push(pageUrl);
           images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
 
-          if (hasTextEdits) {
+          if (extractText) {
             try {
               const pageTextItems = await extractPageTextItems(
                 page,
@@ -283,8 +284,40 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           pageTopOffsetPx += overlayViewport.height;
           if (!cancelled) setTextStackHeightPx(pageTopOffsetPx);
         }
-      } catch (error) {
-        console.warn("Responsive PDF rendering failed:", error);
+        return { localUrls };
+      } catch (err) {
+        // This attempt's own half-drawn pages are useless once we're about to
+        // retry (or give up) — revoke them now instead of leaking blob URLs.
+        revokePageObjectUrls(localUrls);
+        throw err;
+      }
+    };
+
+    const renderPages = async () => {
+      const screenWidth =
+        typeof window !== "undefined" ? window.innerWidth || 794 : 794;
+      const primaryWidth = screenWidth < 768 ? Math.min(794, Math.max(360, Math.round(screenWidth * 2))) : 794;
+
+      try {
+        try {
+          const { localUrls } = await attemptRender(primaryWidth, hasTextEdits);
+          createdUrls.push(...localUrls);
+        } catch (primaryError) {
+          console.warn("PDF rendering failed at full resolution, retrying at reduced resolution:", primaryError);
+          if (cancelled) return;
+          // Clear whatever the failed attempt already drew before falling
+          // back — a half-rendered page set left on screen would look more
+          // broken than a clean retry at a size a memory-constrained phone
+          // can actually manage.
+          setRenderedPdfPages([]);
+          setTextOverlayItems([]);
+          setTextStackHeightPx(0);
+          const fallbackWidth = Math.min(480, primaryWidth);
+          const { localUrls } = await attemptRender(fallbackWidth, false);
+          createdUrls.push(...localUrls);
+        }
+      } catch (fallbackError) {
+        console.warn("Responsive PDF rendering failed on fallback attempt too:", fallbackError);
         if (!cancelled) setPdfRenderError(true);
       } finally {
         clearTimeout(watchdog);
@@ -583,15 +616,32 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                           : "Document pages are not ready yet"}
                       </p>
                       <p className="max-w-sm text-xs text-slate-500">
-                        Mobile browsers cannot show a raw PDF inside the page. Tap retry to render the pages here.
+                        {pdfRenderError
+                          ? "This device couldn't draw the pages inline. You can still open and sign the original file directly."
+                          : "Mobile browsers cannot show a raw PDF inside the page. Tap retry to render the pages here."}
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setPdfRenderAttempt((n) => n + 1)}
-                        className="rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
-                      >
-                        Retry preview
-                      </button>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPdfRenderAttempt((n) => n + 1)}
+                          className="rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
+                        >
+                          Retry preview
+                        </button>
+                        {pdfRenderError && activeFileUrl && (
+                          // Escape hatch so the document is never fully inaccessible: even
+                          // if the in-page canvas pipeline can't cope with this phone's
+                          // browser/memory limits, the native OS PDF viewer almost always can.
+                          <a
+                            href={activeFileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-xl bg-slate-200 hover:bg-slate-300 px-4 py-2.5 text-xs font-extrabold text-slate-700 shadow-sm transition"
+                          >
+                            Open Original PDF
+                          </a>
+                        )}
+                      </div>
                     </div>
                   )
                 ) : (

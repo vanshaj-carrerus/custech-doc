@@ -184,7 +184,12 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     setRenderedPdfPages([]);
     setIsRenderingPdf(true);
 
-    const renderPages = async () => {
+    // One rendering pass at a given canvas resolution. A phone can hit a
+    // canvas memory ceiling that desktop never does — retrying once at a
+    // much smaller size beats leaving the recruiter with a permanently
+    // blank editor canvas.
+    const attemptRender = async (targetWidth: number) => {
+      const localUrls: string[] = [];
       try {
         const bytes = await toUint8Array(activeFileUrl);
         const { pdf } = await loadPdfDocument(bytes);
@@ -200,22 +205,41 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         }
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-          if (cancelled) return;
+          if (cancelled) return { localUrls };
           const page =
             pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const baseViewport = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({ scale: 794 / baseViewport.width });
+          const viewport = page.getViewport({ scale: targetWidth / baseViewport.width });
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
           const context = canvas.getContext("2d", { alpha: false });
-          if (!context) continue;
+          if (!context) throw new Error("2D canvas context unavailable");
 
           await page.render({ canvas, canvasContext: context, viewport }).promise;
           const pageUrl = await canvasToObjectUrl(canvas, 0.88);
-          createdUrls.push(pageUrl);
+          localUrls.push(pageUrl);
           images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
+        }
+        return { localUrls };
+      } catch (err) {
+        revokePageObjectUrls(localUrls);
+        throw err;
+      }
+    };
+
+    const renderPages = async () => {
+      try {
+        try {
+          const { localUrls } = await attemptRender(794);
+          createdUrls.push(...localUrls);
+        } catch (primaryError) {
+          console.warn("PDF editor rendering failed at full resolution, retrying at reduced resolution:", primaryError);
+          if (cancelled) return;
+          setRenderedPdfPages([]);
+          const { localUrls } = await attemptRender(480);
+          createdUrls.push(...localUrls);
         }
       } catch (error) {
         console.warn("PDF editor rendering failed:", error);
