@@ -15,18 +15,28 @@ export type PdfLayoutInfo = {
 let pdfjsLibPromise: ReturnType<typeof loadPdfjs> | null = null;
 
 async function loadPdfjs() {
-  const [lib, workerModule] = await Promise.all([
-    import("pdfjs-dist"),
-    // Imported (not spun up as a dedicated Worker) so parsing runs on the main
-    // thread. Module Workers (`new Worker(url, { type: "module" })`) are what
-    // pdf.js tries first, but they're unreliable on mobile browsers and in-app
-    // webviews (Instagram/WhatsApp/etc.) — the worker can silently never
-    // respond, leaving getDocument() hanging with nothing to catch or retry.
-    // Plain dynamic import() of the same file works everywhere those don't.
-    import("pdfjs-dist/build/pdf.worker.min.mjs"),
-  ]);
-  (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = workerModule;
-  return lib;
+  try {
+    const [lib, workerModule] = await Promise.all([
+      import("pdfjs-dist"),
+      // Imported (not spun up as a dedicated Worker) so parsing runs on the main
+      // thread. Module Workers (`new Worker(url, { type: "module" })`) are what
+      // pdf.js tries first, but they're unreliable on mobile browsers and in-app
+      // webviews (Instagram/WhatsApp/etc.) — the worker can silently never
+      // respond, leaving getDocument() hanging with nothing to catch or retry.
+      // Plain dynamic import() of the same file works everywhere those don't.
+      import("pdfjs-dist/build/pdf.worker.min.mjs"),
+    ]);
+    (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = workerModule;
+    return lib;
+  } catch (err) {
+    // A flaky mobile connection can fail this dynamic import on first load.
+    // Without clearing the cache, the rejected promise below would be cached
+    // forever at module scope — every later call (including the user's
+    // "Retry preview" tap) would keep returning the same dead promise and
+    // the PDF would never load again for the rest of the tab's lifetime.
+    pdfjsLibPromise = null;
+    throw err;
+  }
 }
 
 function getPdfjs() {

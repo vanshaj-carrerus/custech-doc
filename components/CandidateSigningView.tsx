@@ -655,11 +655,19 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 {fields.map((field) => {
                   const fieldWidth = field.width || 200;
                   const fieldHeight = field.height || 36;
+                  // Every dimension inside a field (font size, icon size, padding) is
+                  // pinned to the same 794px-wide basis as field.width/height. Scaling
+                  // only the box and not its contents left the box shrinking on narrow
+                  // phones while its text/icons stayed full desktop size — the text
+                  // then overflowed the box and blocks looked "too big" on mobile.
+                  const fieldFontPx = Math.max(8, (field.fontSize || 14) * documentScale);
+                  const baseFontPx = Math.max(8, 12 * documentScale);
+                  const iconScale = Math.min(1, Math.max(0.65, documentScale));
 
                   return (
                     <div
                       key={field.id}
-                      className={`absolute rounded-sm flex flex-col justify-center p-1 ${
+                      className={`absolute rounded-sm flex flex-col justify-center ${
                         isCompleted
                           ? "border-0 bg-transparent pointer-events-none"
                           : "border-0 bg-[#c7d2fe] hover:bg-[#a5b4fc] focus-within:bg-[#a5b4fc]"
@@ -667,8 +675,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       style={{
                         left: `${field.x}%`,
                         top: `${field.y}%`,
-                        width: `${Math.max(36, fieldWidth * documentScale)}px`,
-                        height: `${Math.max(24, fieldHeight * documentScale)}px`,
+                        width: `${Math.max(20, fieldWidth * documentScale)}px`,
+                        height: `${Math.max(14, fieldHeight * documentScale)}px`,
+                        padding: `${Math.max(1, 4 * documentScale)}px`,
+                        fontSize: `${baseFontPx}px`,
                       }}
                     >
                       {/* Interactive Inputs */}
@@ -682,7 +692,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                               />
                             ) : (
-                              <span className="text-blue-900 text-sm font-serif italic font-extrabold mx-auto">
+                              <span
+                                className="text-blue-900 font-serif italic font-extrabold mx-auto"
+                                style={{ fontSize: `${fieldFontPx * 1.15}px` }}
+                              >
                                 {field.value || "Signed"}
                               </span>
                             )
@@ -690,10 +703,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             <button
                               type="button"
                               onClick={() => openSignatureModal(field.id)}
-                              className="w-full h-full flex items-center justify-between px-2 text-slate-700 font-serif italic font-bold text-xs"
+                              className="w-full h-full flex items-center justify-between px-2 text-slate-700 font-serif italic font-bold"
                             >
-                              <span className="text-emerald-800 font-sans text-xs not-italic font-bold flex items-center gap-1 mx-auto">
-                                <PenTool className="w-3.5 h-3.5" /> Click to Draw Signature ✍️
+                              <span className="text-emerald-800 font-sans not-italic font-bold flex items-center gap-1 mx-auto whitespace-nowrap">
+                                <PenTool style={{ width: `${14 * iconScale}px`, height: `${14 * iconScale}px` }} /> Click to Draw Signature ✍️
                               </span>
                             </button>
                           )
@@ -711,22 +724,26 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 } catch {}
                               }
                             }}
-                            className="w-full h-full bg-transparent border-0 focus:outline-none font-mono text-xs font-bold text-slate-800 cursor-pointer"
+                            className="w-full h-full bg-transparent border-0 focus:outline-none font-mono font-bold text-slate-800 cursor-pointer"
                           />
                         ) : field.type === "checkbox" ? (
-                          <label className="flex items-center gap-2 cursor-pointer w-full text-xs font-bold text-slate-800">
+                          <label className="flex items-center gap-2 cursor-pointer w-full font-bold text-slate-800">
                             <input
                               type="checkbox"
                               defaultChecked
                               disabled={isCompleted}
-                              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                              className="rounded text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                              style={{
+                                width: `${Math.max(10, 16 * documentScale)}px`,
+                                height: `${Math.max(10, 16 * documentScale)}px`,
+                              }}
                             />
                             <input
                               type="text"
                               readOnly={isCompleted}
                               value={field.value || field.placeholder || "I accept terms"}
                               onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-                              className="bg-transparent border-0 focus:outline-none text-xs text-slate-800 font-semibold w-full"
+                              className="bg-transparent border-0 focus:outline-none text-slate-800 font-semibold w-full"
                             />
                           </label>
                         ) : field.type === "radio" ? (
@@ -736,7 +753,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 <label
                                   key={idx}
                                   className="flex items-center gap-1.5 cursor-pointer font-semibold text-slate-800"
-                                  style={{ fontSize: `${field.fontSize || 14}px` }}
+                                  style={{ fontSize: `${fieldFontPx}px` }}
                                 >
                                   <input
                                     type="radio"
@@ -746,8 +763,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     onChange={() => handleFieldValueChange(field.id, option)}
                                     className="text-blue-600 focus:ring-blue-500 flex-shrink-0"
                                     style={{
-                                      width: `${Math.max(12, field.fontSize || 14)}px`,
-                                      height: `${Math.max(12, field.fontSize || 14)}px`,
+                                      width: `${Math.max(9, fieldFontPx)}px`,
+                                      height: `${Math.max(9, fieldFontPx)}px`,
                                     }}
                                   />
                                   <span>{option}</span>
@@ -761,7 +778,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             value={field.value || ""}
                             onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
                             className="w-full h-full bg-transparent border-0 focus:outline-none text-slate-900 font-semibold cursor-pointer"
-                            style={{ fontSize: `${field.fontSize || 14}px` }}
+                            style={{ fontSize: `${fieldFontPx}px` }}
                           >
                             <option value="" disabled>
                               Select an option
@@ -787,8 +804,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                 />
                               ) : (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold truncate">
-                                  <FileText className="w-4 h-4 text-slate-500" />
+                                <div className="flex items-center gap-1.5 text-slate-600 font-bold truncate">
+                                  <FileText style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-slate-500 flex-shrink-0" />
                                   <span className="truncate">Attached File</span>
                                 </div>
                               )}
@@ -823,14 +840,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                   />
                                 ) : (
-                                  <div className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate">
-                                    <FileText className="w-4 h-4 text-blue-600" />
+                                  <div className="flex items-center gap-1.5 text-blue-700 font-bold truncate">
+                                    <FileText style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-blue-600 flex-shrink-0" />
                                     <span className="truncate">Attached File</span>
                                   </div>
                                 )
                               ) : (
-                                <span className="text-[11px] text-blue-700 font-bold flex items-center gap-1">
-                                  <FileText className="w-3.5 h-3.5" /> Upload Image / PDF
+                                <span className="text-blue-700 font-bold flex items-center gap-1 whitespace-nowrap">
+                                  <FileText style={{ width: `${14 * iconScale}px`, height: `${14 * iconScale}px` }} className="flex-shrink-0" /> Upload Image / PDF
                                 </span>
                               )}
                             </div>
@@ -848,7 +865,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   ? field.label
                                   : "Type here"
                             }
-                            className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold"
+                            className="w-full h-full bg-transparent border-0 focus:outline-none font-semibold text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold"
                           />
                         )}
                       </div>
