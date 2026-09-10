@@ -6,7 +6,12 @@ import { sendCompletedAgreementEmail } from "@/lib/email";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { docId, candidateEmail, senderEmail, filledFields } = body;
+    const { docId, candidateEmail, senderEmail, filledFields, device } = body;
+    // Which independent field layout (see PDFEditorView's Desktop/Mobile
+    // editor tabs) the candidate actually filled in and is submitting values
+    // for — only that device's pair gets overwritten with the signed values,
+    // so the other device's untouched layout/blocks aren't clobbered.
+    const isMobileSubmission = device === "mobile";
 
     await connectToDatabase();
 
@@ -14,7 +19,9 @@ export async function POST(request: Request) {
     if (docId && docId.length === 24) {
       docRecord = await DocumentRecord.findByIdAndUpdate(
         docId,
-        { status: "Completed", filledFields: filledFields || [], placedFields: filledFields || [] },
+        isMobileSubmission
+          ? { status: "Completed", filledFieldsMobile: filledFields || [], placedFieldsMobile: filledFields || [] }
+          : { status: "Completed", filledFields: filledFields || [], placedFields: filledFields || [] },
         { new: true }
       );
     }

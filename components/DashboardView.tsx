@@ -272,6 +272,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           fileType: selectedDoc.fileType,
           placedFields: selectedDoc.placedFields,
           filledFields: selectedDoc.filledFields,
+          placedFieldsMobile: selectedDoc.placedFieldsMobile,
+          filledFieldsMobile: selectedDoc.filledFieldsMobile,
           recipientEmail: selectedDoc.recipientEmail,
           recipientName: selectedDoc.recipientName,
           emailOpened: wasEmailOpened(selectedDoc),

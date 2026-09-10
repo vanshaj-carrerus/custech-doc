@@ -166,6 +166,8 @@ export const CompletedDocsView: React.FC<CompletedDocsViewProps> = ({
                         fileType: doc.fileType,
                         placedFields: doc.placedFields,
                         filledFields: doc.filledFields || doc.placedFields,
+                        placedFieldsMobile: doc.placedFieldsMobile,
+                        filledFieldsMobile: doc.filledFieldsMobile || doc.placedFieldsMobile,
                         recipientEmail: doc.recipientEmail,
                         recipientName: doc.recipientName,
                       });

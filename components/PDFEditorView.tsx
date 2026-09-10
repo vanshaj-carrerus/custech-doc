@@ -9,6 +9,7 @@ import {
   revokePageObjectUrls,
   buildFilledPdfBytes,
   downloadPdfBytes,
+  MOBILE_FIELD_BASE_WIDTH,
 } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
@@ -49,11 +50,17 @@ import {
   Mail,
   MailOpen,
   Plus,
+  Monitor,
+  Smartphone,
 } from "lucide-react";
 
 function roundPx(value: number) {
   return Math.round(value * 100) / 100;
 }
+
+// Roughly a typical phone's content width — see MOBILE_FIELD_BASE_WIDTH's
+// definition in lib/pdfUtils.ts for why this is shared with the signing view.
+const MOBILE_BASE_WIDTH = MOBILE_FIELD_BASE_WIDTH;
 
 interface PDFEditorViewProps {
   setActiveView: (view: ActiveView) => void;
@@ -255,7 +262,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     };
   }, [activeFileUrl, isImageDoc]);
 
-  // Placed interactive document fields on the A4 page
+  // Placed interactive document fields on the A4 page (the desktop layout —
+  // see placedFieldsMobile below for the independent phone layout).
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       return documentData.filledFields;
@@ -280,6 +288,33 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     return [];
   });
 
+  // Mobile layout — a fully independent set of fields (own positions, sizes,
+  // even its own blocks), designed against MOBILE_BASE_WIDTH instead of the
+  // desktop canvas's 794px. Kept separate rather than derived from
+  // placedFields so the recruiter can place completely different blocks per
+  // device, not just resized copies of the same ones.
+  const [placedFieldsMobile, setPlacedFieldsMobile] = useState<DocumentField[]>(() => {
+    if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+      return documentData.filledFieldsMobile;
+    }
+    if (Array.isArray(documentData?.placedFieldsMobile)) {
+      return documentData.placedFieldsMobile;
+    }
+    if (typeof window !== "undefined") {
+      const savedPlacedMobile = localStorage.getItem("dochub_placed_fields_mobile");
+      if (savedPlacedMobile) {
+        try {
+          return JSON.parse(savedPlacedMobile);
+        } catch {}
+      }
+    }
+    return [];
+  });
+
+  // Which layout is currently being edited/previewed. The candidate-facing
+  // signing view picks the same way, based on the device it's opened on.
+  const [editorMode, setEditorMode] = useState<"desktop" | "mobile">("desktop");
+
   useEffect(() => {
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       setPlacedFields(documentData.filledFields);
@@ -297,6 +332,20 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   useEffect(() => {
     if (documentData?.status === "Draft") {
       setPlacedFields((fields) => fields.filter((field) => !field.id.startsWith("auto-")));
+    }
+  }, [documentData?.id, documentData?.status]);
+
+  useEffect(() => {
+    if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+      setPlacedFieldsMobile(documentData.filledFieldsMobile);
+      return;
+    }
+    if (Array.isArray(documentData?.placedFieldsMobile)) {
+      setPlacedFieldsMobile(
+        documentData.status === "Draft"
+          ? documentData.placedFieldsMobile.filter((field) => !field.id.startsWith("auto-"))
+          : documentData.placedFieldsMobile
+      );
     }
   }, [documentData?.id, documentData?.status]);
 
@@ -321,6 +370,55 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     }
   }, [placedFields]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined" && placedFieldsMobile.length > 0) {
+      const cacheTimer = window.setTimeout(() => {
+        try {
+          const lightweightFields = placedFieldsMobile.map((field) =>
+            field.value?.startsWith("data:image")
+              ? { ...field, value: "" }
+              : field
+          );
+          localStorage.setItem(
+            "dochub_placed_fields_mobile",
+            JSON.stringify(lightweightFields)
+          );
+        } catch {
+          // Local cache is optional; the document state remains authoritative.
+        }
+      }, 500);
+      return () => window.clearTimeout(cacheTimer);
+    }
+  }, [placedFieldsMobile]);
+
+  // A convenient starting point, not a permanent link: the first time the
+  // recruiter switches to the Mobile tab on a document that has a desktop
+  // layout but no mobile layout yet, seed it with a scaled copy so they're
+  // adjusting an already-reasonable layout instead of starting from a blank
+  // page. Positions (x/y are percentages) carry over as-is; only pixel
+  // widths/heights/font sizes are rescaled to the narrower mobile canvas.
+  // After this one-time seed the two layouts are fully independent again.
+  useEffect(() => {
+    if (editorMode !== "mobile") return;
+    if (placedFieldsMobile.length > 0 || placedFields.length === 0) return;
+    const scale = MOBILE_BASE_WIDTH / 794;
+    setPlacedFieldsMobile(
+      placedFields.map((field) => ({
+        ...field,
+        width: field.width ? roundPx(field.width * scale) : field.width,
+        height: field.height ? roundPx(field.height * scale) : field.height,
+        fontSize: field.fontSize ? Math.max(9, Math.round(field.fontSize * scale)) : field.fontSize,
+        options: field.options ? [...field.options] : undefined,
+      }))
+    );
+  }, [editorMode, placedFields, placedFieldsMobile.length]);
+
+  // The single source of truth every field handler below reads/writes —
+  // whichever of the two independent layouts is currently active.
+  const fields = editorMode === "mobile" ? placedFieldsMobile : placedFields;
+  const setFields = editorMode === "mobile" ? setPlacedFieldsMobile : setPlacedFields;
+  const canvasBaseWidth = editorMode === "mobile" ? MOBILE_BASE_WIDTH : 794;
+
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<DocumentField | null>(null);
 
@@ -344,8 +442,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     dropX?: number,
     dropY?: number
   ) => {
-    const width = type === "paragraph" ? 360 : 200;
-    const height = type === "paragraph" ? 80 : type === "radio" ? 70 : 34;
+    const canvasScale = canvasBaseWidth / 794;
+    const width = roundPx((type === "paragraph" ? 360 : 200) * canvasScale);
+    const height = roundPx((type === "paragraph" ? 80 : type === "radio" ? 70 : 34) * canvasScale);
     const hasDropPosition = dropX !== undefined && dropY !== undefined;
 
     const newField: DocumentField = {
@@ -356,12 +455,12 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       y: hasDropPosition ? Math.max(0, Math.min(94, dropY!)) : Math.floor(25 + Math.random() * 40),
       width,
       height,
-      fontSize: 14,
+      fontSize: Math.max(9, Math.round(14 * canvasScale)),
       value: type === "date" ? "2026-08-18" : "",
       options: type === "radio" || type === "dropdown" ? ["Option 1", "Option 2"] : undefined,
       isLocked,
     };
-    setPlacedFields([...placedFields, newField]);
+    setFields([...fields, newField]);
     setActiveFieldId(newField.id);
 
     // A random (click-to-add) position can land outside the current scroll position
@@ -388,14 +487,15 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
+      const canvasScale = canvasBaseWidth / 794;
       const newField: DocumentField = {
         id: `field-${Date.now()}`,
         type: "image",
         label: "Image Box",
         x: Math.floor(20 + Math.random() * 40),
         y: Math.floor(25 + Math.random() * 40),
-        width: 220,
-        height: 160,
+        width: roundPx(220 * canvasScale),
+        height: roundPx(160 * canvasScale),
         fontSize: 14,
         value: dataUrl,
         isLocked: false,
@@ -403,7 +503,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         // the document, not a field the candidate is meant to fill/replace.
         candidateLocked: true,
       };
-      setPlacedFields((prev) => [...prev, newField]);
+      setFields((prev) => [...prev, newField]);
       setActiveFieldId(newField.id);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -452,12 +552,12 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   const handleRemoveField = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setPlacedFields(placedFields.filter((f) => f.id !== id));
+    setFields(fields.filter((f) => f.id !== id));
     if (activeFieldId === id) setActiveFieldId(null);
   };
 
   const copyField = (id: string) => {
-    const field = placedFields.find((item) => item.id === id);
+    const field = fields.find((item) => item.id === id);
     if (!field) return;
     setCopiedField({
       ...field,
@@ -474,7 +574,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       y: Math.min(99, copiedField.y + 1),
       options: copiedField.options ? [...copiedField.options] : undefined,
     };
-    setPlacedFields((fields) => [...fields, pastedField]);
+    setFields((prev) => [...prev, pastedField]);
     setActiveFieldId(pastedField.id);
   };
 
@@ -512,7 +612,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
     window.addEventListener("keydown", handleFieldClipboard);
     return () => window.removeEventListener("keydown", handleFieldClipboard);
-  }, [activeFieldId, copiedField, placedFields, isSendModalOpen]);
+  }, [activeFieldId, copiedField, fields, isSendModalOpen]);
 
   // Dragging field around canvas
   const handleFieldMouseDown = (id: string, e: React.MouseEvent) => {
@@ -524,7 +624,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     e.stopPropagation();
     setActiveFieldId(id);
 
-    const targetField = placedFields.find((f) => f.id === id);
+    const targetField = fields.find((f) => f.id === id);
     if (!targetField || !paperRef.current) return;
 
     const paperRect = paperRef.current.getBoundingClientRect();
@@ -551,7 +651,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       const newX = Math.max(0, Math.min(maxX, startFieldX + deltaX));
       const newY = Math.max(0, Math.min(maxY, startFieldY + deltaY));
 
-      setPlacedFields((prev) =>
+      setFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, x: newX, y: newY } : f))
       );
     };
@@ -570,17 +670,18 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    const targetField = placedFields.find((f) => f.id === id);
+    const targetField = fields.find((f) => f.id === id);
     if (!targetField) return;
 
     const startX = e.clientX;
     const startWidth = targetField.width || 200;
+    const maxWidth = canvasBaseWidth - 20;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
-      const newWidth = roundPx(Math.max(80, Math.min(680, startWidth + deltaX)));
+      const newWidth = roundPx(Math.max(40, Math.min(maxWidth, startWidth + deltaX)));
 
-      setPlacedFields((prev) =>
+      setFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, width: newWidth } : f))
       );
     };
@@ -599,7 +700,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    const targetField = placedFields.find((f) => f.id === id);
+    const targetField = fields.find((f) => f.id === id);
     if (!targetField) return;
 
     const startY = e.clientY;
@@ -609,7 +710,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
       const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
-      setPlacedFields((prev) =>
+      setFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, height: newHeight } : f))
       );
     };
@@ -628,21 +729,22 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    const targetField = placedFields.find((f) => f.id === id);
+    const targetField = fields.find((f) => f.id === id);
     if (!targetField) return;
 
     const startX = e.clientX;
     const startY = e.clientY;
     const startWidth = targetField.width || 200;
     const startHeight = targetField.height || 34;
+    const maxWidth = canvasBaseWidth - 20;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
       const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
-      const newWidth = roundPx(Math.max(60, Math.min(680, startWidth + deltaX)));
+      const newWidth = roundPx(Math.max(40, Math.min(maxWidth, startWidth + deltaX)));
       const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
-      setPlacedFields((prev) =>
+      setFields((prev) =>
         prev.map((f) => (f.id === id ? { ...f, width: newWidth, height: newHeight } : f))
       );
     };
@@ -658,13 +760,13 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Update field value
   const handleUpdateFieldValue = (id: string, newValue: string) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) => (f.id === id ? { ...f, value: newValue } : f))
     );
   };
 
   const handleUpdateRadioOption = (id: string, index: number, text: string) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) => {
         if (f.id !== id) return f;
         const options = [...(f.options || [])];
@@ -675,7 +777,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   };
 
   const handleAddRadioOption = (id: string) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) =>
         f.id === id
           ? { ...f, options: [...(f.options || []), `Option ${(f.options?.length || 0) + 1}`] }
@@ -685,7 +787,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   };
 
   const handleRemoveRadioOption = (id: string, index: number) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) =>
         f.id === id ? { ...f, options: (f.options || []).filter((_, i) => i !== index) } : f
       )
@@ -694,7 +796,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Step Width helper — scales font size proportionally with width so text keeps fitting the field
   const handleStepWidth = (id: string, delta: number) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) => {
         if (f.id !== id) return f;
         const currentWidth = f.width || 200;
@@ -709,7 +811,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Step Height helper — scales font size proportionally with height so text keeps fitting the field
   const handleStepHeight = (id: string, delta: number) => {
-    setPlacedFields((prev) =>
+    setFields((prev) =>
       prev.map((f) => {
         if (f.id !== id) return f;
         const currentHeight = f.height || 34;
@@ -726,7 +828,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
 
   // Builds a real downloadable PDF from the source document with every placed
   // field's current value (text, checkbox, signature image) drawn onto the
-  // matching page, at the position/size it has in the on-screen editor.
+  // matching page, at the position/size it has in the on-screen editor —
+  // using whichever layout (desktop/mobile) is currently active, at its
+  // matching coordinate basis.
   const handleDownloadPdf = async () => {
     if (!activeFileUrl || isDownloading) return;
     setIsDownloading(true);
@@ -736,7 +840,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
         isImageDoc,
         pageCount,
         pageHeightPx,
-        fields: placedFields,
+        fields,
+        renderWidthPx: canvasBaseWidth,
         textEdits: {},
         textOverlayItems: [],
       });
@@ -754,7 +859,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       {/* Top Editor Toolbar */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-3 md:px-6 py-2 flex items-center justify-between shadow-2xs gap-2 overflow-x-auto">
         {/* Left Toolbar actions */}
-        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 md:gap-2 shrink-0">
           <button
             onClick={() => setActiveView("dashboard")}
             className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
@@ -766,7 +871,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           {/* Hidden on completed/signed documents — nothing here is editable once a doc is locked */}
           {!isCompletedDoc && (
             <>
-              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
 
               <button
                 className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
@@ -782,7 +887,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 <Printer className="w-4 h-4" />
               </button>
 
-              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
 
               <button
                 className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
@@ -797,7 +902,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 <Redo2 className="w-4 h-4" />
               </button>
 
-              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
 
               <button
                 className="p-1.5 bg-blue-50 text-blue-600 rounded-lg font-semibold transition"
@@ -806,7 +911,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 <MousePointer className="w-4 h-4" />
               </button>
 
-              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
 
               {/* Text Formatting */}
               <button
@@ -814,7 +919,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   const next = !isBold;
                   setIsBold(next);
                   if (activeFieldId) {
-                    setPlacedFields((prev) =>
+                    setFields((prev) =>
                       prev.map((f) => (f.id === activeFieldId ? { ...f, isBold: next } : f))
                     );
                   }
@@ -834,7 +939,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   const next = !isItalic;
                   setIsItalic(next);
                   if (activeFieldId) {
-                    setPlacedFields((prev) =>
+                    setFields((prev) =>
                       prev.map((f) => (f.id === activeFieldId ? { ...f, isItalic: next } : f))
                     );
                   }
@@ -858,7 +963,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                     const color = e.target.value;
                     setSelectedColor(color);
                     if (activeFieldId) {
-                      setPlacedFields((prev) =>
+                      setFields((prev) =>
                         prev.map((f) => (f.id === activeFieldId ? { ...f, color } : f))
                       );
                     }
@@ -875,7 +980,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   setFontSize(size);
                   const numSize = parseInt(size);
                   if (activeFieldId) {
-                    setPlacedFields((prev) =>
+                    setFields((prev) =>
                       prev.map((f) => (f.id === activeFieldId ? { ...f, fontSize: numSize } : f))
                     );
                   }
@@ -889,7 +994,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 <option value="20px">20px</option>
               </select>
 
-              <div className="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+              <div className="h-4 w-px bg-slate-200 mx-0.5"></div>
 
               <button
                 className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
@@ -907,14 +1012,53 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           )}
         </div>
 
+        {/* Desktop / Mobile Layout Toggle — the recruiter edits a fully independent set
+            of fields per device; the candidate signing view auto-picks whichever one
+            matches the screen it's opened on. */}
+        <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-0.5 shrink-0 mx-auto">
+          <button
+            type="button"
+            onClick={() => setEditorMode("desktop")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              editorMode === "desktop"
+                ? "bg-white text-primary shadow-2xs"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+            title="Edit the desktop field layout"
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Desktop</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditorMode("mobile")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              editorMode === "mobile"
+                ? "bg-white text-primary shadow-2xs"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+            title="Edit the mobile field layout"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Mobile</span>
+            {placedFieldsMobile.length > 0 && (
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${editorMode === "mobile" ? "bg-primary" : "bg-slate-400"}`}
+                title="This document has a mobile layout"
+              />
+            )}
+          </button>
+        </div>
+
         {/* Far Right Toolbar Actions */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Prominent Send Request Button — hidden once the doc is already completed/signed */}
           {!isCompletedDoc && (
             <button
               onClick={() => {
                 if (documentData) {
                   documentData.placedFields = placedFields;
+                  documentData.placedFieldsMobile = placedFieldsMobile;
                 }
                 if (onOpenSendModal) onOpenSendModal();
               }}
@@ -958,7 +1102,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
       <div className="flex-1 relative flex overflow-y-auto h-full min-h-0">
         {/* Left Tool Sidebar (Hidden when document is completed) */}
         {!isCompletedDoc && (
-          <aside className="sticky! top-0 z-20! h-full self-start max-h-[calc(100vh-64px)] w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 flex-shrink-0 select-none shadow-inner">
+          <aside className="sticky! top-0 z-20! h-full self-start max-h-[calc(100vh-64px)] w-60 bg-slate-100 border-r border-slate-200 p-3 overflow-y-auto flex flex-col gap-3 shrink-0 select-none shadow-inner">
             <div className="px-1 pt-1 flex items-center justify-between">
               <span className="text-[11px] font-extrabold tracking-wider text-slate-400 uppercase">
                 Document Blocks
@@ -1046,7 +1190,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           className="flex-1 bg-slate-200/80 p-4 md:p-8 flex flex-col items-center gap-6 relative select-none"
         >
           {/* Header Document Metadata Outside Paper Container */}
-          <div className="w-[794px] max-w-full bg-white rounded-2xl border border-slate-300 p-4 md:p-5 shadow-sm flex justify-between items-center gap-4">
+          <div className="w-198.5 max-w-full bg-white rounded-2xl border border-slate-300 p-4 md:p-5 shadow-sm flex justify-between items-center gap-4">
             <div className="min-w-0 flex-1">
               {isSignedComplete ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary text-white font-extrabold text-xs rounded-lg mb-2 shadow-sm">
@@ -1083,7 +1227,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-red-600 font-bold text-xs uppercase tracking-widest mb-1">
-                  <FileText className="w-4 h-4 flex-shrink-0" /> Uploaded Document Preview
+                  <FileText className="w-4 h-4 shrink-0" /> Uploaded Document Preview
                 </div>
               )}
               <h1 className="text-base md:text-lg font-bold text-slate-900 truncate max-w-xl" title={docTitle}>
@@ -1097,18 +1241,18 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 <span>{pageCount} page(s)</span>
               </p>
             </div>
-            <div className="text-right flex-shrink-0">
+            <div className="text-right shrink-0">
               <div className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
-                <Check className="w-3.5 h-3.5 stroke-[3]" /> CUS-DOC Verified
+                <Check className="w-3.5 h-3.5 stroke-3" /> CUS-DOC Verified
               </div>
             </div>
           </div>
 
-          {/* A4 Paper Container - 1:1 Canvas Geometry */}
+          {/* Paper Container - 1:1 Canvas Geometry (width follows the active Desktop/Mobile layout) */}
           <div
             className="flex justify-center transition-all duration-200 flex-shrink-0 mx-auto"
             style={{
-              width: `${794 * (zoomLevel / 100)}px`,
+              width: `${canvasBaseWidth * (zoomLevel / 100)}px`,
               minHeight: "auto",
             }}
           >
@@ -1119,7 +1263,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               onDrop={!isCompletedDoc ? handleCanvasDrop : undefined}
               className="relative bg-white shadow-2xl rounded-lg transition-transform duration-200 text-slate-800 font-sans border border-slate-300 flex-shrink-0"
               style={{
-                width: "794px",
+                width: `${canvasBaseWidth}px`,
                 minHeight: "auto",
                 transform: `scale(${zoomLevel / 100})`,
                 transformOrigin: "top center",
@@ -1194,7 +1338,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                   </div>
 
               {/* Precise Draggable & Resizable Placed Fields */}
-              {placedFields.map((field) => {
+              {fields.map((field) => {
                 const isActive = activeFieldId === field.id;
                 const fieldWidth = roundPx(field.width || 200);
                 const fieldHeight = roundPx(field.height || 34);
@@ -1286,7 +1430,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                                 value={field.placeholder || ""}
                                 onChange={(e) => {
                                   const next = e.target.value;
-                                  setPlacedFields((prev) =>
+                                  setFields((prev) =>
                                     prev.map((f) => {
                                       if (f.id !== field.id) return f;
                                       // Editing the placeholder is how the recruiter previews
@@ -1375,7 +1519,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                               e.stopPropagation();
                               const currentSize = field.fontSize || 14;
                               const newSize = Math.max(10, currentSize - 2);
-                              setPlacedFields((prev) =>
+                              setFields((prev) =>
                                 prev.map((f) => (f.id === field.id ? { ...f, fontSize: newSize } : f))
                               );
                             }}
@@ -1390,7 +1534,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                               e.stopPropagation();
                               const currentSize = field.fontSize || 14;
                               const newSize = Math.min(32, currentSize + 2);
-                              setPlacedFields((prev) =>
+                              setFields((prev) =>
                                 prev.map((f) => (f.id === field.id ? { ...f, fontSize: newSize } : f))
                               );
                             }}

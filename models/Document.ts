@@ -13,6 +13,8 @@ export interface IDocumentRecord extends Document {
   message?: string;
   placedFields?: any[];
   filledFields?: any[];
+  placedFieldsMobile?: any[];
+  filledFieldsMobile?: any[];
   textEdits?: Record<string, string>;
   status: "Draft" | "Processing" | "Pending Sign" | "Completed";
   isTemplate?: boolean;
@@ -44,6 +46,8 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     message: { type: String },
     placedFields: { type: Array, default: [] },
     filledFields: { type: Array, default: [] },
+    placedFieldsMobile: { type: Array, default: [] },
+    filledFieldsMobile: { type: Array, default: [] },
     textEdits: { type: Schema.Types.Mixed, default: {} },
     status: {
       type: String,

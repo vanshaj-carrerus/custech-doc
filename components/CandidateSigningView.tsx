@@ -11,6 +11,7 @@ import {
   PdfTextItem,
   buildFilledPdfBytes,
   downloadPdfBytes,
+  MOBILE_FIELD_BASE_WIDTH,
 } from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
@@ -62,10 +63,42 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     fetch(`/api/documents/track/${encodeURIComponent(id)}?event=view`).catch(() => {});
   }, [documentData?.id]);
 
+  // Defaults to desktop on this first render (window isn't available during
+  // SSR) and is corrected right after mount below — a one-frame desktop
+  // flash on an actual phone is the safe tradeoff. Decided once at mount and
+  // never on resize: this feeds which field array (and its in-progress
+  // values) is shown, so re-deciding mid-session — e.g. a browser window
+  // narrowed below 768px while the candidate is filling the desktop layout —
+  // would swap out from under them and could wipe what they've already typed.
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  useEffect(() => {
+    setIsMobileDevice(window.innerWidth < 768);
+  }, []);
+
+  // The recruiter can design a fully independent field layout for phone
+  // screens (PDFEditorView's Desktop/Mobile editor tabs) — own positions,
+  // sizes, even its own blocks. Use it only when both the visitor is on a
+  // phone AND the recruiter actually built one; otherwise fall back to the
+  // desktop layout, auto-scaled, exactly as before.
+  const hasMobileLayout = !!(
+    (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) ||
+    (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0)
+  );
+  const useMobileLayout = isMobileDevice && hasMobileLayout;
+  const fieldBaseWidth = useMobileLayout ? MOBILE_FIELD_BASE_WIDTH : 794;
+
   // Initial placed fields — prefer the candidate's already-submitted values
   // (filledFields) so a refresh after completing shows what was actually signed,
   // falling back to the recruiter's blank placed fields for a not-yet-signed doc.
   const initialFields: DocumentField[] = (() => {
+    if (useMobileLayout) {
+      if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+        return documentData.filledFieldsMobile;
+      }
+      if (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0) {
+        return documentData.placedFieldsMobile;
+      }
+    }
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       return documentData.filledFields;
     }
@@ -129,6 +162,21 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   );
 
   useEffect(() => {
+    if (useMobileLayout) {
+      if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+        setFields(documentData.filledFieldsMobile);
+        return;
+      }
+      if (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0) {
+        setFields(
+          autoFillFromProfile(documentData.placedFieldsMobile, {
+            name: documentData.recipientName,
+            email: candidateEmail,
+          })
+        );
+        return;
+      }
+    }
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       setFields(documentData.filledFields);
     } else if (documentData?.placedFields && documentData.placedFields.length > 0) {
@@ -139,7 +187,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         })
       );
     }
-  }, [documentData?.id, documentData?.placedFields, documentData?.filledFields, documentData?.recipientName, candidateEmail]);
+  }, [
+    documentData?.id,
+    documentData?.placedFields,
+    documentData?.filledFields,
+    documentData?.placedFieldsMobile,
+    documentData?.filledFieldsMobile,
+    documentData?.recipientName,
+    candidateEmail,
+    useMobileLayout,
+  ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
 
@@ -346,7 +403,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const documentScale = documentWidth / 794;
+  const documentScale = documentWidth / fieldBaseWidth;
   const iframeHeightPx = containerMinHeightPx * documentScale;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
@@ -438,6 +495,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         pageCount,
         pageHeightPx,
         fields,
+        renderWidthPx: fieldBaseWidth,
         textEdits,
         textOverlayItems,
       });
@@ -473,6 +531,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           candidateEmail: candidateEmail,
           senderEmail: recruiterEmail,
           filledFields: fields,
+          device: useMobileLayout ? "mobile" : "desktop",
         }),
       });
       const data = await res.json();

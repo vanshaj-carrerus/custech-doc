@@ -41,6 +41,11 @@ export interface RecentDoc {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  // Independent field layout (own positions/sizes, own field set) used when a
+  // recipient opens the document on a phone — see placedFieldsMobile on
+  // ActiveDocument for why this needs to be a fully separate array.
+  placedFieldsMobile?: DocumentField[];
+  filledFieldsMobile?: DocumentField[];
   textEdits?: Record<string, string>;
   senderEmail?: string;
   recipientEmail?: string;
@@ -63,6 +68,12 @@ export interface ActiveDocument {
   fileType?: string;
   placedFields?: DocumentField[];
   filledFields?: DocumentField[];
+  // The recruiter can design a second, independent field layout (its own
+  // positions, sizes, and even its own set of blocks — not just a resized
+  // copy of the desktop one) purpose-built for phone screens. The signing
+  // view picks whichever of these matches the visiting device.
+  placedFieldsMobile?: DocumentField[];
+  filledFieldsMobile?: DocumentField[];
   textEdits?: Record<string, string>;
   status?: string;
   recipientEmail?: string;

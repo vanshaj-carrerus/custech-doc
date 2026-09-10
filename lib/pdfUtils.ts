@@ -7,6 +7,12 @@
 
 export const DEFAULT_PAGE_HEIGHT_PX = 1050;
 
+// Canvas width an independently-designed mobile field layout (see
+// PDFEditorView's Desktop/Mobile editor tabs) is authored against — the
+// desktop layout is always authored against 794 (A4 @ 96dpi). Shared here so
+// the editor and the candidate signing view agree on the same basis.
+export const MOBILE_FIELD_BASE_WIDTH = 420;
+
 export type PdfLayoutInfo = {
   pageCount: number;
   pageHeightPx: number;
@@ -257,6 +263,12 @@ export async function buildFilledPdfBytes({
   pageCount,
   pageHeightPx,
   fields,
+  // The pixel basis field.width/height/fontSize were authored against — 794
+  // for the desktop layout, or a narrower canvas (e.g. 420) for an
+  // independently-designed mobile layout. pageHeightPx/totalHeightPx stay on
+  // the 794 basis regardless, since those describe the PDF's own rendered
+  // geometry, not a field layout.
+  renderWidthPx = 794,
   textEdits,
   textOverlayItems,
 }: {
@@ -265,6 +277,7 @@ export async function buildFilledPdfBytes({
   pageCount: number;
   pageHeightPx: number;
   fields: FieldLike[];
+  renderWidthPx?: number;
   textEdits: Record<string, string>;
   textOverlayItems: PdfTextItem[];
 }): Promise<Uint8Array> {
@@ -286,7 +299,6 @@ export async function buildFilledPdfBytes({
 
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const pages = pdfDoc.getPages();
-  const renderWidthPx = 794;
   const totalHeightPx = pageCount * pageHeightPx;
 
   // Standard PDF fonts only support WinAnsi (Latin-1) characters — strip anything
