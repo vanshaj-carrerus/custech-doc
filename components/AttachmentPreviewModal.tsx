@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, FileText, Loader2, X } from "lucide-react";
 
 interface AttachmentPreviewModalProps {
@@ -59,9 +60,13 @@ export default function AttachmentPreviewModal({ value, title = "Attached File",
 
   const fileName = `${title.replace(/[^\w.-]+/g, "_")}.${extensionFor(mime)}`;
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portaled to <body> so a transformed/scaled ancestor in the editor can't become
+  // the containing block for `position: fixed` and push the panel off-screen.
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] bg-slate-900/70 flex items-center justify-center p-2 sm:p-6"
+      className="fixed inset-0 z-[9999] bg-slate-900/70 flex items-center justify-center p-2 sm:p-6"
       onClick={onClose}
     >
       <div
@@ -111,6 +116,7 @@ export default function AttachmentPreviewModal({ value, title = "Attached File",
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
