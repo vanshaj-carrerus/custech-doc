@@ -32,6 +32,7 @@ import {
   Printer,
   Eye,
 } from "lucide-react";
+import AttachmentPreviewModal from "@/components/AttachmentPreviewModal";
 
 interface CandidateSigningViewProps {
   documentData?: ActiveDocument;
@@ -139,6 +140,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     }
   }, [documentData?.id, documentData?.placedFields, documentData?.filledFields, documentData?.recipientName, candidateEmail]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<{ value: string; title: string } | null>(null);
   const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
 
   // The doc record (with its real status) is fetched asynchronously by the parent
@@ -745,6 +747,17 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   alt="Document media"
                                   className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                 />
+                              ) : field.value ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" })
+                                  }
+                                  className="flex items-center gap-1.5 text-xs text-slate-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                                >
+                                  <Eye className="w-4 h-4 text-slate-500" />
+                                  <span className="truncate">Preview Attached File</span>
+                                </button>
                               ) : (
                                 <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold truncate">
                                   <FileText className="w-4 h-4 text-slate-500" />
@@ -782,9 +795,22 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                   />
                                 ) : (
-                                  <div className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate">
-                                    <FileText className="w-4 h-4 text-blue-600" />
-                                    <span className="truncate">Attached File</span>
+                                  <div className="flex flex-col items-center gap-1 min-w-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        // Don't let the click fall through to the box's re-upload handler.
+                                        e.stopPropagation();
+                                        setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" });
+                                      }}
+                                      className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                                    >
+                                      <Eye className="w-4 h-4 text-blue-600" />
+                                      <span className="truncate">Preview Attached File</span>
+                                    </button>
+                                    {!isCompleted && (
+                                      <span className="text-[10px] text-blue-700/80 font-semibold">Click box to replace</span>
+                                    )}
                                   </div>
                                 )
                               ) : (
@@ -951,6 +977,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {previewAttachment && (
+        <AttachmentPreviewModal
+          value={previewAttachment.value}
+          title={previewAttachment.title}
+          onClose={() => setPreviewAttachment(null)}
+        />
       )}
     </div>
   );

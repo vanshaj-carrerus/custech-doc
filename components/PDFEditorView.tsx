@@ -49,7 +49,9 @@ import {
   Mail,
   MailOpen,
   Plus,
+  Eye,
 } from "lucide-react";
+import AttachmentPreviewModal from "@/components/AttachmentPreviewModal";
 
 function roundPx(value: number) {
   return Math.round(value * 100) / 100;
@@ -377,6 +379,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
   };
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<{ value: string; title: string } | null>(null);
   const [copiedField, setCopiedField] = useState<DocumentField | null>(null);
 
   // Document Building Blocks definition
@@ -1890,13 +1893,30 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                               <img
                                 src={field.value}
                                 alt="Uploaded Box Attachment"
-                                className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
+                                onClick={
+                                  isCompletedDoc
+                                    ? () => setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" })
+                                    : undefined
+                                }
+                                className={`max-h-full max-w-full object-contain mx-auto ${
+                                  isCompletedDoc ? "cursor-zoom-in" : "pointer-events-none"
+                                }`}
                               />
                             ) : (
-                              <div className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate">
-                                <FileText className="w-4 h-4 text-blue-600" />
-                                <span className="truncate">Attached File</span>
-                              </div>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" });
+                                }}
+                                className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm cursor-pointer"
+                                title="Preview attached file"
+                              >
+                                <Eye className="w-4 h-4 text-blue-600" />
+                                <span className="truncate">Preview Attached File</span>
+                              </button>
                             )
                           ) : (
                             <span className="text-[11px] text-blue-700 font-bold flex items-center gap-1">
@@ -2030,6 +2050,14 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           </div>
         </main>
       </div>
+
+      {previewAttachment && (
+        <AttachmentPreviewModal
+          value={previewAttachment.value}
+          title={previewAttachment.title}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      )}
     </div>
   );
 };
