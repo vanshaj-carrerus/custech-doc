@@ -920,7 +920,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   onClick={() =>
                                     setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" })
                                   }
-                                  className="flex items-center gap-1.5 text-xs text-slate-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                                  className="pointer-events-auto flex items-center gap-1.5 text-xs text-slate-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
                                 >
                                   <Eye className="w-4 h-4 text-slate-500" />
                                   <span className="truncate">Preview Attached File</span>
@@ -970,7 +970,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                         e.stopPropagation();
                                         setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" });
                                       }}
-                                      className="flex items-center gap-1.5 text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                                      className="pointer-events-auto flex items-center gap-1.5 text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
                                     >
                                       <Eye style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-blue-600 flex-shrink-0" />
                                       <span className="truncate">Preview Attached File</span>

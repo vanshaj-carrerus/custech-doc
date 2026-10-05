@@ -1780,7 +1780,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                                     : undefined
                                 }
                                 className={`max-h-full max-w-full object-contain mx-auto ${
-                                  isCompletedDoc ? "cursor-zoom-in" : "pointer-events-none"
+                                  // The completed-doc field wrapper is pointer-events-none, so re-enable clicks here.
+                                  isCompletedDoc ? "cursor-zoom-in pointer-events-auto" : "pointer-events-none"
                                 }`}
                               />
                             ) : (
@@ -1792,7 +1793,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                                   e.stopPropagation();
                                   setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" });
                                 }}
-                                className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm cursor-pointer"
+                                className="pointer-events-auto flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm cursor-pointer"
                                 title="Preview attached file"
                               >
                                 <Eye className="w-4 h-4 text-blue-600" />
