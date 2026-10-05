@@ -962,7 +962,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                   />
                                 ) : (
-<<<<<<< HEAD
                                   <div className="flex flex-col items-center gap-1 min-w-0">
                                     <button
                                       type="button"
@@ -971,19 +970,14 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                         e.stopPropagation();
                                         setPreviewAttachment({ value: field.value!, title: field.label || "Attached File" });
                                       }}
-                                      className="flex items-center gap-1.5 text-xs text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                                      className="flex items-center gap-1.5 text-blue-700 font-bold truncate px-2 py-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
                                     >
-                                      <Eye className="w-4 h-4 text-blue-600" />
+                                      <Eye style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-blue-600 flex-shrink-0" />
                                       <span className="truncate">Preview Attached File</span>
                                     </button>
                                     {!isCompleted && (
                                       <span className="text-[10px] text-blue-700/80 font-semibold">Click box to replace</span>
                                     )}
-=======
-                                  <div className="flex items-center gap-1.5 text-blue-700 font-bold truncate">
-                                    <FileText style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-blue-600 flex-shrink-0" />
-                                    <span className="truncate">Attached File</span>
->>>>>>> c37602af8dd11fb7125469120f8523cff4eb8115
                                   </div>
                                 )
                               ) : (

@@ -50,12 +50,9 @@ import {
   Mail,
   MailOpen,
   Plus,
-<<<<<<< HEAD
   Eye,
-=======
   Monitor,
   Smartphone,
->>>>>>> c37602af8dd11fb7125469120f8523cff4eb8115
 } from "lucide-react";
 import AttachmentPreviewModal from "@/components/AttachmentPreviewModal";
 
