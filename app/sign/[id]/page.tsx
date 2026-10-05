@@ -58,6 +58,8 @@ export default function CandidateSignPage({ params, searchParams }: SignPageProp
               fileType: found.fileType,
               placedFields: found.placedFields,
               filledFields: found.filledFields,
+              placedFieldsMobile: found.placedFieldsMobile,
+              filledFieldsMobile: found.filledFieldsMobile,
               textEdits: found.textEdits,
               status: found.status,
               recipientEmail: found.recipientEmail,

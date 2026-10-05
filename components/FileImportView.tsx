@@ -12,7 +12,6 @@ import {
   CheckCircle,
   HardDrive,
   Cloud,
-  Lock,
   Zap,
   SlidersHorizontal,
 } from "lucide-react";
@@ -32,7 +31,6 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
   const [showDropdown, setShowDropdown] = useState(false);
 
   // Options toggles
-  const [enableOcr, setEnableOcr] = useState(false);
   const [compressPdf, setCompressPdf] = useState(true);
 
   // Uploaded files list starts empty (no dummy data)
@@ -402,23 +400,6 @@ export const FileImportView: React.FC<FileImportViewProps> = ({
 
             {showOptions && (
               <div className="p-4 pt-2 border-t border-slate-200/80 bg-white grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
-                  <input
-                    type="checkbox"
-                    checked={enableOcr}
-                    onChange={(e) => setEnableOcr(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <div>
-                    <span className="font-semibold text-slate-800 flex items-center gap-1">
-                      OCR Text Recognition <Lock className="w-3 h-3 text-amber-500" />
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      Make scanned PDFs editable
-                    </span>
-                  </div>
-                </label>
-
                 <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
                   <input
                     type="checkbox"

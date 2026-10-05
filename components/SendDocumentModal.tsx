@@ -124,6 +124,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           senderEmail,
           fileType,
           placedFields: documentData?.placedFields || [],
+          placedFieldsMobile: documentData?.placedFieldsMobile || [],
           textEdits: documentData?.textEdits || {},
         }),
       });
@@ -161,6 +162,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
       (typeof window !== "undefined" && localStorage.getItem("dochub_placed_fields")
         ? JSON.parse(localStorage.getItem("dochub_placed_fields")!)
         : []);
+    const activePlacedFieldsMobile = documentData?.placedFieldsMobile || [];
     const activeTextEdits =
       documentData?.textEdits ||
       (typeof window !== "undefined" && localStorage.getItem("dochub_text_edits")
@@ -199,6 +201,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
             senderEmail,
             fileType: activeFileType,
             placedFields: activePlacedFields,
+            placedFieldsMobile: activePlacedFieldsMobile,
             textEdits: activeTextEdits,
           }),
         });
@@ -227,6 +230,7 @@ export const SendDocumentModal: React.FC<SendDocumentModalProps> = ({
           pages: documentData?.pages || 1,
           fileType: activeFileType,
           placedFields: activePlacedFields,
+          placedFieldsMobile: activePlacedFieldsMobile,
           textEdits: activeTextEdits,
           senderEmail: senderEmail,
           recipientEmail: recipientEmail,

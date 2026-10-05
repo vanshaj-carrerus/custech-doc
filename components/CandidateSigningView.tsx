@@ -9,6 +9,9 @@ import {
   canvasToObjectUrl,
   revokePageObjectUrls,
   PdfTextItem,
+  buildFilledPdfBytes,
+  downloadPdfBytes,
+  MOBILE_FIELD_BASE_WIDTH,
 } from "@/lib/pdfUtils";
 import { autoFillFromProfile } from "@/lib/detectFormFields";
 import {
@@ -61,10 +64,42 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     fetch(`/api/documents/track/${encodeURIComponent(id)}?event=view`).catch(() => {});
   }, [documentData?.id]);
 
+  // Defaults to desktop on this first render (window isn't available during
+  // SSR) and is corrected right after mount below — a one-frame desktop
+  // flash on an actual phone is the safe tradeoff. Decided once at mount and
+  // never on resize: this feeds which field array (and its in-progress
+  // values) is shown, so re-deciding mid-session — e.g. a browser window
+  // narrowed below 768px while the candidate is filling the desktop layout —
+  // would swap out from under them and could wipe what they've already typed.
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  useEffect(() => {
+    setIsMobileDevice(window.innerWidth < 768);
+  }, []);
+
+  // The recruiter can design a fully independent field layout for phone
+  // screens (PDFEditorView's Desktop/Mobile editor tabs) — own positions,
+  // sizes, even its own blocks. Use it only when both the visitor is on a
+  // phone AND the recruiter actually built one; otherwise fall back to the
+  // desktop layout, auto-scaled, exactly as before.
+  const hasMobileLayout = !!(
+    (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) ||
+    (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0)
+  );
+  const useMobileLayout = isMobileDevice && hasMobileLayout;
+  const fieldBaseWidth = useMobileLayout ? MOBILE_FIELD_BASE_WIDTH : 794;
+
   // Initial placed fields — prefer the candidate's already-submitted values
   // (filledFields) so a refresh after completing shows what was actually signed,
   // falling back to the recruiter's blank placed fields for a not-yet-signed doc.
   const initialFields: DocumentField[] = (() => {
+    if (useMobileLayout) {
+      if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+        return documentData.filledFieldsMobile;
+      }
+      if (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0) {
+        return documentData.placedFieldsMobile;
+      }
+    }
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       return documentData.filledFields;
     }
@@ -128,6 +163,21 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
   );
 
   useEffect(() => {
+    if (useMobileLayout) {
+      if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
+        setFields(documentData.filledFieldsMobile);
+        return;
+      }
+      if (documentData?.placedFieldsMobile && documentData.placedFieldsMobile.length > 0) {
+        setFields(
+          autoFillFromProfile(documentData.placedFieldsMobile, {
+            name: documentData.recipientName,
+            email: candidateEmail,
+          })
+        );
+        return;
+      }
+    }
     if (documentData?.filledFields && documentData.filledFields.length > 0) {
       setFields(documentData.filledFields);
     } else if (documentData?.placedFields && documentData.placedFields.length > 0) {
@@ -138,7 +188,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         })
       );
     }
-  }, [documentData?.id, documentData?.placedFields, documentData?.filledFields, documentData?.recipientName, candidateEmail]);
+  }, [
+    documentData?.id,
+    documentData?.placedFields,
+    documentData?.filledFields,
+    documentData?.placedFieldsMobile,
+    documentData?.filledFieldsMobile,
+    documentData?.recipientName,
+    candidateEmail,
+    useMobileLayout,
+  ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ value: string; title: string } | null>(null);
   const [isCompleted, setIsCompleted] = useState(documentData?.status === "Completed");
@@ -218,7 +277,12 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
       }
     }, 45000);
 
-    const renderPages = async () => {
+    // One rendering pass at a given canvas resolution. Broken out so a failure
+    // (most often a canvas memory ceiling on an older/low-end phone — desktop
+    // has no such limit, which is why this only ever shows up on phones) can
+    // be retried once at a much smaller size instead of giving up outright.
+    const attemptRender = async (targetWidth: number, extractText: boolean) => {
+      const localUrls: string[] = [];
       try {
         const bytes = await toUint8Array(activeFileUrl);
         const { pdf, pdfjsLib } = await loadPdfDocument(bytes);
@@ -227,10 +291,6 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         let pageTopOffsetPx = 0;
         const firstPage = await pdf.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
-        const screenWidth =
-          typeof window !== "undefined" ? window.innerWidth || 794 : 794;
-        const targetWidth = screenWidth < 768 ? Math.min(794, Math.max(360, Math.round(screenWidth * 2))) : 794;
-        const firstRenderScale = targetWidth / firstViewport.width;
         if (!cancelled) {
           setDetectedPages(pdf.numPages || 1);
           setDetectedPageHeightPx(
@@ -239,7 +299,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
         }
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-          if (cancelled) return;
+          if (cancelled) return { localUrls };
           const page =
             pageNumber === 1 ? firstPage : await pdf.getPage(pageNumber);
           const initialViewport = page.getViewport({ scale: 1 });
@@ -253,7 +313,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
           const context = canvas.getContext("2d", { alpha: false });
-          if (!context) continue;
+          if (!context) throw new Error("2D canvas context unavailable");
 
           await page.render({
             canvasContext: context,
@@ -261,11 +321,11 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
             canvas,
           }).promise;
           const pageUrl = await canvasToObjectUrl(canvas, 0.82);
-          createdUrls.push(pageUrl);
+          localUrls.push(pageUrl);
           images.push(pageUrl);
           if (!cancelled) setRenderedPdfPages([...images]);
 
-          if (hasTextEdits) {
+          if (extractText) {
             try {
               const pageTextItems = await extractPageTextItems(
                 page,
@@ -283,8 +343,40 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           pageTopOffsetPx += overlayViewport.height;
           if (!cancelled) setTextStackHeightPx(pageTopOffsetPx);
         }
-      } catch (error) {
-        console.warn("Responsive PDF rendering failed:", error);
+        return { localUrls };
+      } catch (err) {
+        // This attempt's own half-drawn pages are useless once we're about to
+        // retry (or give up) — revoke them now instead of leaking blob URLs.
+        revokePageObjectUrls(localUrls);
+        throw err;
+      }
+    };
+
+    const renderPages = async () => {
+      const screenWidth =
+        typeof window !== "undefined" ? window.innerWidth || 794 : 794;
+      const primaryWidth = screenWidth < 768 ? Math.min(794, Math.max(360, Math.round(screenWidth * 2))) : 794;
+
+      try {
+        try {
+          const { localUrls } = await attemptRender(primaryWidth, hasTextEdits);
+          createdUrls.push(...localUrls);
+        } catch (primaryError) {
+          console.warn("PDF rendering failed at full resolution, retrying at reduced resolution:", primaryError);
+          if (cancelled) return;
+          // Clear whatever the failed attempt already drew before falling
+          // back — a half-rendered page set left on screen would look more
+          // broken than a clean retry at a size a memory-constrained phone
+          // can actually manage.
+          setRenderedPdfPages([]);
+          setTextOverlayItems([]);
+          setTextStackHeightPx(0);
+          const fallbackWidth = Math.min(480, primaryWidth);
+          const { localUrls } = await attemptRender(fallbackWidth, false);
+          createdUrls.push(...localUrls);
+        }
+      } catch (fallbackError) {
+        console.warn("Responsive PDF rendering failed on fallback attempt too:", fallbackError);
         if (!cancelled) setPdfRenderError(true);
       } finally {
         clearTimeout(watchdog);
@@ -313,7 +405,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const documentScale = documentWidth / 794;
+  const documentScale = documentWidth / fieldBaseWidth;
   const iframeHeightPx = containerMinHeightPx * documentScale;
 
   const handleFieldValueChange = (id: string, newValue: string) => {
@@ -390,6 +482,34 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
     setIsSigModalOpen(false);
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Builds a real downloadable PDF with every field's signed value baked in,
+  // so the candidate has their own copy of the executed agreement instead of
+  // only being able to view it in-browser.
+  const handleDownloadPdf = async () => {
+    if (!activeFileUrl || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const outBytes = await buildFilledPdfBytes({
+        fileUrl: activeFileUrl,
+        isImageDoc,
+        pageCount,
+        pageHeightPx,
+        fields,
+        renderWidthPx: fieldBaseWidth,
+        textEdits,
+        textOverlayItems,
+      });
+      downloadPdfBytes(outBytes, activeDocName);
+    } catch (err) {
+      console.error("Failed to generate PDF download:", err);
+      alert("Couldn't generate the PDF. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleCompleteSigning = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!allFieldsFilled) return;
@@ -413,6 +533,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
           candidateEmail: candidateEmail,
           senderEmail: recruiterEmail,
           filledFields: fields,
+          device: useMobileLayout ? "mobile" : "desktop",
         }),
       });
       const data = await res.json();
@@ -472,6 +593,18 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 <span className="hidden sm:inline">Executed & E-Signed Document</span>
                 <span className="sm:hidden">Signed</span>
               </span>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={isDownloading || !activeFileUrl}
+                className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDownloading ? (
+                  <Loader2 className="w-3.5 h-3.5 text-slate-600 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                )}
+                <span className="hidden sm:inline">{isDownloading ? "Preparing..." : "Download PDF"}</span>
+              </button>
               <button
                 onClick={() => window.print()}
                 className="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
@@ -544,15 +677,32 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                           : "Document pages are not ready yet"}
                       </p>
                       <p className="max-w-sm text-xs text-slate-500">
-                        Mobile browsers cannot show a raw PDF inside the page. Tap retry to render the pages here.
+                        {pdfRenderError
+                          ? "This device couldn't draw the pages inline. You can still open and sign the original file directly."
+                          : "Mobile browsers cannot show a raw PDF inside the page. Tap retry to render the pages here."}
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setPdfRenderAttempt((n) => n + 1)}
-                        className="rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
-                      >
-                        Retry preview
-                      </button>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPdfRenderAttempt((n) => n + 1)}
+                          className="rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-sm"
+                        >
+                          Retry preview
+                        </button>
+                        {pdfRenderError && activeFileUrl && (
+                          // Escape hatch so the document is never fully inaccessible: even
+                          // if the in-page canvas pipeline can't cope with this phone's
+                          // browser/memory limits, the native OS PDF viewer almost always can.
+                          <a
+                            href={activeFileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-xl bg-slate-200 hover:bg-slate-300 px-4 py-2.5 text-xs font-extrabold text-slate-700 shadow-sm transition"
+                          >
+                            Open Original PDF
+                          </a>
+                        )}
+                      </div>
                     </div>
                   )
                 ) : (
@@ -616,11 +766,19 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                 {fields.map((field) => {
                   const fieldWidth = field.width || 200;
                   const fieldHeight = field.height || 36;
+                  // Every dimension inside a field (font size, icon size, padding) is
+                  // pinned to the same 794px-wide basis as field.width/height. Scaling
+                  // only the box and not its contents left the box shrinking on narrow
+                  // phones while its text/icons stayed full desktop size — the text
+                  // then overflowed the box and blocks looked "too big" on mobile.
+                  const fieldFontPx = Math.max(8, (field.fontSize || 14) * documentScale);
+                  const baseFontPx = Math.max(8, 12 * documentScale);
+                  const iconScale = Math.min(1, Math.max(0.65, documentScale));
 
                   return (
                     <div
                       key={field.id}
-                      className={`absolute rounded-sm flex flex-col justify-center p-1 ${
+                      className={`absolute rounded-sm flex flex-col justify-center ${
                         isCompleted
                           ? "border-0 bg-transparent pointer-events-none"
                           : "border-0 bg-[#c7d2fe] hover:bg-[#a5b4fc] focus-within:bg-[#a5b4fc]"
@@ -628,8 +786,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                       style={{
                         left: `${field.x}%`,
                         top: `${field.y}%`,
-                        width: `${Math.max(36, fieldWidth * documentScale)}px`,
-                        height: `${Math.max(24, fieldHeight * documentScale)}px`,
+                        width: `${Math.max(20, fieldWidth * documentScale)}px`,
+                        height: `${Math.max(14, fieldHeight * documentScale)}px`,
+                        padding: `${Math.max(1, 4 * documentScale)}px`,
+                        fontSize: `${baseFontPx}px`,
                       }}
                     >
                       {/* Interactive Inputs */}
@@ -643,7 +803,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                               />
                             ) : (
-                              <span className="text-blue-900 text-sm font-serif italic font-extrabold mx-auto">
+                              <span
+                                className="text-blue-900 font-serif italic font-extrabold mx-auto"
+                                style={{ fontSize: `${fieldFontPx * 1.15}px` }}
+                              >
                                 {field.value || "Signed"}
                               </span>
                             )
@@ -651,10 +814,10 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             <button
                               type="button"
                               onClick={() => openSignatureModal(field.id)}
-                              className="w-full h-full flex items-center justify-between px-2 text-slate-700 font-serif italic font-bold text-xs"
+                              className="w-full h-full flex items-center justify-between px-2 text-slate-700 font-serif italic font-bold"
                             >
-                              <span className="text-emerald-800 font-sans text-xs not-italic font-bold flex items-center gap-1 mx-auto">
-                                <PenTool className="w-3.5 h-3.5" /> Click to Draw Signature ✍️
+                              <span className="text-emerald-800 font-sans not-italic font-bold flex items-center gap-1 mx-auto whitespace-nowrap">
+                                <PenTool style={{ width: `${14 * iconScale}px`, height: `${14 * iconScale}px` }} /> Click to Draw Signature ✍️
                               </span>
                             </button>
                           )
@@ -672,22 +835,26 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 } catch {}
                               }
                             }}
-                            className="w-full h-full bg-transparent border-0 focus:outline-none font-mono text-xs font-bold text-slate-800 cursor-pointer"
+                            className="w-full h-full bg-transparent border-0 focus:outline-none font-mono font-bold text-slate-800 cursor-pointer"
                           />
                         ) : field.type === "checkbox" ? (
-                          <label className="flex items-center gap-2 cursor-pointer w-full text-xs font-bold text-slate-800">
+                          <label className="flex items-center gap-2 cursor-pointer w-full font-bold text-slate-800">
                             <input
                               type="checkbox"
                               defaultChecked
                               disabled={isCompleted}
-                              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                              className="rounded text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                              style={{
+                                width: `${Math.max(10, 16 * documentScale)}px`,
+                                height: `${Math.max(10, 16 * documentScale)}px`,
+                              }}
                             />
                             <input
                               type="text"
                               readOnly={isCompleted}
                               value={field.value || field.placeholder || "I accept terms"}
                               onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
-                              className="bg-transparent border-0 focus:outline-none text-xs text-slate-800 font-semibold w-full"
+                              className="bg-transparent border-0 focus:outline-none text-slate-800 font-semibold w-full"
                             />
                           </label>
                         ) : field.type === "radio" ? (
@@ -697,7 +864,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                 <label
                                   key={idx}
                                   className="flex items-center gap-1.5 cursor-pointer font-semibold text-slate-800"
-                                  style={{ fontSize: `${field.fontSize || 14}px` }}
+                                  style={{ fontSize: `${fieldFontPx}px` }}
                                 >
                                   <input
                                     type="radio"
@@ -707,8 +874,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     onChange={() => handleFieldValueChange(field.id, option)}
                                     className="text-blue-600 focus:ring-blue-500 flex-shrink-0"
                                     style={{
-                                      width: `${Math.max(12, field.fontSize || 14)}px`,
-                                      height: `${Math.max(12, field.fontSize || 14)}px`,
+                                      width: `${Math.max(9, fieldFontPx)}px`,
+                                      height: `${Math.max(9, fieldFontPx)}px`,
                                     }}
                                   />
                                   <span>{option}</span>
@@ -722,7 +889,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                             value={field.value || ""}
                             onChange={(e) => handleFieldValueChange(field.id, e.target.value)}
                             className="w-full h-full bg-transparent border-0 focus:outline-none text-slate-900 font-semibold cursor-pointer"
-                            style={{ fontSize: `${field.fontSize || 14}px` }}
+                            style={{ fontSize: `${fieldFontPx}px` }}
                           >
                             <option value="" disabled>
                               Select an option
@@ -759,8 +926,8 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   <span className="truncate">Preview Attached File</span>
                                 </button>
                               ) : (
-                                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold truncate">
-                                  <FileText className="w-4 h-4 text-slate-500" />
+                                <div className="flex items-center gap-1.5 text-slate-600 font-bold truncate">
+                                  <FileText style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-slate-500 flex-shrink-0" />
                                   <span className="truncate">Attached File</span>
                                 </div>
                               )}
@@ -795,6 +962,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     className="max-h-full max-w-full object-contain mx-auto pointer-events-none"
                                   />
                                 ) : (
+<<<<<<< HEAD
                                   <div className="flex flex-col items-center gap-1 min-w-0">
                                     <button
                                       type="button"
@@ -811,11 +979,16 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                     {!isCompleted && (
                                       <span className="text-[10px] text-blue-700/80 font-semibold">Click box to replace</span>
                                     )}
+=======
+                                  <div className="flex items-center gap-1.5 text-blue-700 font-bold truncate">
+                                    <FileText style={{ width: `${16 * iconScale}px`, height: `${16 * iconScale}px` }} className="text-blue-600 flex-shrink-0" />
+                                    <span className="truncate">Attached File</span>
+>>>>>>> c37602af8dd11fb7125469120f8523cff4eb8115
                                   </div>
                                 )
                               ) : (
-                                <span className="text-[11px] text-blue-700 font-bold flex items-center gap-1">
-                                  <FileText className="w-3.5 h-3.5" /> Upload Image / PDF
+                                <span className="text-blue-700 font-bold flex items-center gap-1 whitespace-nowrap">
+                                  <FileText style={{ width: `${14 * iconScale}px`, height: `${14 * iconScale}px` }} className="flex-shrink-0" /> Upload Image / PDF
                                 </span>
                               )}
                             </div>
@@ -833,7 +1006,7 @@ export const CandidateSigningView: React.FC<CandidateSigningViewProps> = ({
                                   ? field.label
                                   : "Type here"
                             }
-                            className="w-full h-full bg-transparent border-0 focus:outline-none text-xs font-semibold text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold"
+                            className="w-full h-full bg-transparent border-0 focus:outline-none font-semibold text-slate-900 placeholder:text-indigo-800 placeholder:font-semibold"
                           />
                         )}
                       </div>

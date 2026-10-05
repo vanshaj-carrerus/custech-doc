@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       senderEmail,
       fileType,
       placedFields,
+      placedFieldsMobile,
       textEdits,
       isTemplate,
     } = body;
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       fileType: fileType || "application/pdf",
       senderEmail: cleanSender,
       placedFields: placedFields || [],
+      placedFieldsMobile: placedFieldsMobile || [],
       textEdits: textEdits || {},
       status: "Draft",
       isTemplate: !!isTemplate,

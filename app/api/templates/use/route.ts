@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       fileType: template.fileType,
       senderEmail: cleanSender,
       placedFields: template.placedFields || [],
+      placedFieldsMobile: template.placedFieldsMobile || [],
       status: "Draft",
       isTemplate: false,
     });
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
         fileUrl: created.fileUrl ? `/api/documents/${created._id.toString()}/file` : undefined,
         fileType: created.fileType,
         placedFields: created.placedFields,
+        placedFieldsMobile: created.placedFieldsMobile,
         status: created.status,
       },
     });

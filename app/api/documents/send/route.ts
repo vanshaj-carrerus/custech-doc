@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       subject,
       message,
       placedFields,
+      placedFieldsMobile,
       textEdits,
       fileType,
     } = body;
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
     // the main source of latency on this route (mirrors the fix already
     // applied in draft/route.ts and list/route.ts).
     const existing = await DocumentRecord.findById(documentId).select(
-      "name size pages fileType senderEmail recipientEmail recipientName subject message placedFields textEdits status"
+      "name size pages fileType senderEmail recipientEmail recipientName subject message placedFields placedFieldsMobile textEdits status"
     );
 
     if (!existing) {
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
     existing.subject = subject || existing.subject || "Signature Requested";
     existing.message = message || existing.message || "";
     existing.placedFields = placedFields || existing.placedFields || [];
+    existing.placedFieldsMobile = placedFieldsMobile || existing.placedFieldsMobile || [];
     existing.textEdits = textEdits || existing.textEdits || {};
     existing.status = "Pending Sign";
     existing.sentAt = new Date();
