@@ -9,7 +9,9 @@ import {
   revokePageObjectUrls,
   buildFilledPdfBytes,
   downloadPdfBytes,
-  MOBILE_FIELD_BASE_WIDTH,
+  FIELD_BASE_WIDTH,
+  MOBILE_PREVIEW_WIDTH,
+  resolveDocumentFields,
 } from "@/lib/pdfUtils";
 import {
   ArrowLeft,
@@ -59,10 +61,6 @@ import AttachmentPreviewModal from "@/components/AttachmentPreviewModal";
 function roundPx(value: number) {
   return Math.round(value * 100) / 100;
 }
-
-// Roughly a typical phone's content width — see MOBILE_FIELD_BASE_WIDTH's
-// definition in lib/pdfUtils.ts for why this is shared with the signing view.
-const MOBILE_BASE_WIDTH = MOBILE_FIELD_BASE_WIDTH;
 
 interface PDFEditorViewProps {
   setActiveView: (view: ActiveView) => void;
@@ -264,15 +262,11 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     };
   }, [activeFileUrl, isImageDoc]);
 
-  // Placed interactive document fields on the A4 page (the desktop layout —
-  // see placedFieldsMobile below for the independent phone layout).
+  // Placed interactive document fields on the A4 page. This is the only field
+  // layout — desktop and phone both show it, scaled to fit the screen.
   const [placedFields, setPlacedFields] = useState<DocumentField[]>(() => {
-    if (documentData?.filledFields && documentData.filledFields.length > 0) {
-      return documentData.filledFields;
-    }
-    if (Array.isArray(documentData?.placedFields)) {
-      return documentData.placedFields;
-    }
+    const resolved = resolveDocumentFields(documentData);
+    if (resolved) return resolved;
     if (typeof window !== "undefined") {
       const savedCompleted = localStorage.getItem("dochub_completed_fields");
       if (savedCompleted) {
@@ -290,65 +284,21 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     return [];
   });
 
-  // Mobile layout — a fully independent set of fields (own positions, sizes,
-  // even its own blocks), designed against MOBILE_BASE_WIDTH instead of the
-  // desktop canvas's 794px. Kept separate rather than derived from
-  // placedFields so the recruiter can place completely different blocks per
-  // device, not just resized copies of the same ones.
-  const [placedFieldsMobile, setPlacedFieldsMobile] = useState<DocumentField[]>(() => {
-    if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
-      return documentData.filledFieldsMobile;
-    }
-    if (Array.isArray(documentData?.placedFieldsMobile)) {
-      return documentData.placedFieldsMobile;
-    }
-    if (typeof window !== "undefined") {
-      const savedPlacedMobile = localStorage.getItem("dochub_placed_fields_mobile");
-      if (savedPlacedMobile) {
-        try {
-          return JSON.parse(savedPlacedMobile);
-        } catch {}
-      }
-    }
-    return [];
-  });
-
-  // Which layout is currently being edited/previewed. The candidate-facing
-  // signing view picks the same way, based on the device it's opened on.
+  // "Mobile" only previews the same fields at phone width — it's not a second
+  // layout, so a field can never end up in a different place on a phone.
   const [editorMode, setEditorMode] = useState<"desktop" | "mobile">("desktop");
 
   useEffect(() => {
-    if (documentData?.filledFields && documentData.filledFields.length > 0) {
-      setPlacedFields(documentData.filledFields);
-      return;
-    }
-    if (Array.isArray(documentData?.placedFields)) {
-      setPlacedFields(
-        documentData.status === "Draft"
-          ? documentData.placedFields.filter((field) => !field.id.startsWith("auto-"))
-          : documentData.placedFields
-      );
-    }
-  }, [documentData?.id, documentData?.status]);
-
-  useEffect(() => {
-    if (documentData?.status === "Draft") {
-      setPlacedFields((fields) => fields.filter((field) => !field.id.startsWith("auto-")));
-    }
-  }, [documentData?.id, documentData?.status]);
-
-  useEffect(() => {
-    if (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0) {
-      setPlacedFieldsMobile(documentData.filledFieldsMobile);
-      return;
-    }
-    if (Array.isArray(documentData?.placedFieldsMobile)) {
-      setPlacedFieldsMobile(
-        documentData.status === "Draft"
-          ? documentData.placedFieldsMobile.filter((field) => !field.id.startsWith("auto-"))
-          : documentData.placedFieldsMobile
-      );
-    }
+    const resolved = resolveDocumentFields(documentData);
+    if (!resolved) return;
+    const isSigned =
+      (documentData?.filledFields && documentData.filledFields.length > 0) ||
+      (documentData?.filledFieldsMobile && documentData.filledFieldsMobile.length > 0);
+    setPlacedFields(
+      !isSigned && documentData?.status === "Draft"
+        ? resolved.filter((field) => !field.id.startsWith("auto-"))
+        : resolved
+    );
   }, [documentData?.id, documentData?.status]);
 
   useEffect(() => {
@@ -372,54 +322,13 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     }
   }, [placedFields]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && placedFieldsMobile.length > 0) {
-      const cacheTimer = window.setTimeout(() => {
-        try {
-          const lightweightFields = placedFieldsMobile.map((field) =>
-            field.value?.startsWith("data:image")
-              ? { ...field, value: "" }
-              : field
-          );
-          localStorage.setItem(
-            "dochub_placed_fields_mobile",
-            JSON.stringify(lightweightFields)
-          );
-        } catch {
-          // Local cache is optional; the document state remains authoritative.
-        }
-      }, 500);
-      return () => window.clearTimeout(cacheTimer);
-    }
-  }, [placedFieldsMobile]);
-
-  // A convenient starting point, not a permanent link: the first time the
-  // recruiter switches to the Mobile tab on a document that has a desktop
-  // layout but no mobile layout yet, seed it with a scaled copy so they're
-  // adjusting an already-reasonable layout instead of starting from a blank
-  // page. Positions (x/y are percentages) carry over as-is; only pixel
-  // widths/heights/font sizes are rescaled to the narrower mobile canvas.
-  // After this one-time seed the two layouts are fully independent again.
-  useEffect(() => {
-    if (editorMode !== "mobile") return;
-    if (placedFieldsMobile.length > 0 || placedFields.length === 0) return;
-    const scale = MOBILE_BASE_WIDTH / 794;
-    setPlacedFieldsMobile(
-      placedFields.map((field) => ({
-        ...field,
-        width: field.width ? roundPx(field.width * scale) : field.width,
-        height: field.height ? roundPx(field.height * scale) : field.height,
-        fontSize: field.fontSize ? Math.max(9, Math.round(field.fontSize * scale)) : field.fontSize,
-        options: field.options ? [...field.options] : undefined,
-      }))
-    );
-  }, [editorMode, placedFields, placedFieldsMobile.length]);
-
-  // The single source of truth every field handler below reads/writes —
-  // whichever of the two independent layouts is currently active.
-  const fields = editorMode === "mobile" ? placedFieldsMobile : placedFields;
-  const setFields = editorMode === "mobile" ? setPlacedFieldsMobile : setPlacedFields;
-  const canvasBaseWidth = editorMode === "mobile" ? MOBILE_BASE_WIDTH : 794;
+  const fields = placedFields;
+  const setFields = setPlacedFields;
+  const canvasBaseWidth = FIELD_BASE_WIDTH;
+  // On-screen scale of the 794px canvas: the zoom level, shrunk to phone width
+  // in the Mobile preview. Drag/resize math divides pointer deltas by this.
+  const displayScale =
+    (zoomLevel / 100) * (editorMode === "mobile" ? MOBILE_PREVIEW_WIDTH / FIELD_BASE_WIDTH : 1);
 
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<{ value: string; title: string } | null>(null);
@@ -635,7 +544,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const startY = e.clientY;
     const startFieldX = targetField.x;
     const startFieldY = targetField.y;
-    const zoomScale = zoomLevel / 100;
+    const zoomScale = displayScale;
     const paperWidth = paperRect.width / zoomScale;
     const paperHeight = paperRect.height / zoomScale;
     const maxX = Math.max(
@@ -681,7 +590,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const maxWidth = canvasBaseWidth - 20;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
+      const deltaX = (moveEvent.clientX - startX) / displayScale;
       const newWidth = roundPx(Math.max(40, Math.min(maxWidth, startWidth + deltaX)));
 
       setFields((prev) =>
@@ -710,7 +619,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const startHeight = targetField.height || 34;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
+      const deltaY = (moveEvent.clientY - startY) / displayScale;
       const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
       setFields((prev) =>
@@ -742,8 +651,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
     const maxWidth = canvasBaseWidth - 20;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = (moveEvent.clientX - startX) / (zoomLevel / 100);
-      const deltaY = (moveEvent.clientY - startY) / (zoomLevel / 100);
+      const deltaX = (moveEvent.clientX - startX) / displayScale;
+      const deltaY = (moveEvent.clientY - startY) / displayScale;
       const newWidth = roundPx(Math.max(40, Math.min(maxWidth, startWidth + deltaX)));
       const newHeight = roundPx(Math.max(16, Math.min(400, startHeight + deltaY)));
 
@@ -1015,9 +924,9 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           )}
         </div>
 
-        {/* Desktop / Mobile Layout Toggle — the recruiter edits a fully independent set
-            of fields per device; the candidate signing view auto-picks whichever one
-            matches the screen it's opened on. */}
+        {/* Desktop / Mobile Preview Toggle — both show the same single field layout;
+            Mobile just previews it scaled down to phone width, exactly as a candidate
+            on a phone will see it. */}
         <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-0.5 shrink-0 mx-auto">
           <button
             type="button"
@@ -1027,7 +936,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 ? "bg-white text-primary shadow-2xs"
                 : "text-slate-500 hover:text-slate-800"
             }`}
-            title="Edit the desktop field layout"
+            title="Preview at desktop width"
           >
             <Monitor className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Desktop</span>
@@ -1040,16 +949,10 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
                 ? "bg-white text-primary shadow-2xs"
                 : "text-slate-500 hover:text-slate-800"
             }`}
-            title="Edit the mobile field layout"
+            title="Preview how the same fields look on a phone"
           >
             <Smartphone className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Mobile</span>
-            {placedFieldsMobile.length > 0 && (
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${editorMode === "mobile" ? "bg-primary" : "bg-slate-400"}`}
-                title="This document has a mobile layout"
-              />
-            )}
           </button>
         </div>
 
@@ -1061,7 +964,8 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               onClick={() => {
                 if (documentData) {
                   documentData.placedFields = placedFields;
-                  documentData.placedFieldsMobile = placedFieldsMobile;
+                  // Clear any old separate phone layout so every device uses placedFields.
+                  documentData.placedFieldsMobile = [];
                 }
                 if (onOpenSendModal) onOpenSendModal();
               }}
@@ -1255,7 +1159,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
           <div
             className="flex justify-center transition-all duration-200 flex-shrink-0 mx-auto"
             style={{
-              width: `${canvasBaseWidth * (zoomLevel / 100)}px`,
+              width: `${canvasBaseWidth * displayScale}px`,
               minHeight: "auto",
             }}
           >
@@ -1268,7 +1172,7 @@ export const PDFEditorView: React.FC<PDFEditorViewProps> = ({
               style={{
                 width: `${canvasBaseWidth}px`,
                 minHeight: "auto",
-                transform: `scale(${zoomLevel / 100})`,
+                transform: `scale(${displayScale})`,
                 transformOrigin: "top center",
               }}
             >

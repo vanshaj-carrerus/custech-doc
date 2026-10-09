@@ -7,11 +7,48 @@
 
 export const DEFAULT_PAGE_HEIGHT_PX = 1050;
 
-// Canvas width an independently-designed mobile field layout (see
-// PDFEditorView's Desktop/Mobile editor tabs) is authored against — the
-// desktop layout is always authored against 794 (A4 @ 96dpi). Shared here so
-// the editor and the candidate signing view agree on the same basis.
-export const MOBILE_FIELD_BASE_WIDTH = 420;
+// Fields are authored once, against a 794px-wide canvas (A4 @ 96dpi), and
+// every screen — desktop or phone — shows that same layout scaled to fit, so
+// a field never lands somewhere different on mobile.
+export const FIELD_BASE_WIDTH = 794;
+
+// Phone width the editor's "Mobile" tab previews the page at.
+export const MOBILE_PREVIEW_WIDTH = 420;
+
+type LayoutField = { width?: number; height?: number; fontSize?: number };
+type FieldLayoutSource<F extends LayoutField> = {
+  placedFields?: F[];
+  filledFields?: F[];
+  filledFieldsMobile?: F[];
+};
+
+// Documents used to carry a separate phone layout authored against a 420px
+// canvas. Some were signed on it, so their submitted values live only in
+// filledFieldsMobile — rescale those onto the single 794px layout so they
+// still open correctly.
+const LEGACY_MOBILE_BASE_WIDTH = 420;
+
+function legacyMobileToBase<F extends LayoutField>(fields: F[]): F[] {
+  const scale = FIELD_BASE_WIDTH / LEGACY_MOBILE_BASE_WIDTH;
+  return fields.map((field) => ({
+    ...field,
+    width: field.width ? Math.round(field.width * scale * 100) / 100 : field.width,
+    height: field.height ? Math.round(field.height * scale * 100) / 100 : field.height,
+    fontSize: field.fontSize ? Math.round(field.fontSize * scale) : field.fontSize,
+  }));
+}
+
+// The one field layout to show for a document: the signed values if it's been
+// completed, otherwise the recruiter's placed fields. Returns null when the
+// document has none.
+export function resolveDocumentFields<F extends LayoutField>(doc?: FieldLayoutSource<F>): F[] | null {
+  if (doc?.filledFields && doc.filledFields.length > 0) return doc.filledFields;
+  if (doc?.filledFieldsMobile && doc.filledFieldsMobile.length > 0) {
+    return legacyMobileToBase(doc.filledFieldsMobile);
+  }
+  if (Array.isArray(doc?.placedFields)) return doc.placedFields;
+  return null;
+}
 
 export type PdfLayoutInfo = {
   pageCount: number;
