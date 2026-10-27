@@ -1,0 +1,21 @@
+# MongoDB Database Connection String
+MONGODB_URI=mongodb://127.0.0.1:27017/dochub_database
+
+# Application Settings
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+JWT_SECRET=your_secret_key_here
+
+# Google Apps Script web app (candidate list)
+GOOGLE_WEBAPP_URL=https://script.google.com/macros/s/AKfycbzJDyamlIUPTAtV2Tu2YEJIN32Ex7xx2N1xEcJbazGXjkCJ8w8gXAeE81J2wQYYs38u/exec
+
+# SMTP Nodemailer Email Configuration
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-gmail-app-password
+
+# Protects the automatic document-reminder cron endpoint
+CRON_SECRET=replace-with-a-random-string-at-least-16-characters
+
+# Environment
+NODE_ENV=development

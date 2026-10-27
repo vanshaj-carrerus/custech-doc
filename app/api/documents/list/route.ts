@@ -50,10 +50,11 @@ export async function GET(request: Request) {
       });
     }
 
+    // Return every matching document. Do not cap this list — older imports
+    // must stay visible until the user deletes them manually.
     const documentsQuery = DocumentRecord.find(query)
       .sort({ createdAt: -1 })
       .allowDiskUse(true)
-      .limit(50)
       .select("-fileUrl");
     if (!docId) {
       // Dashboard rows only need metadata. Returning every Base64 PDF here can
@@ -122,8 +123,31 @@ export async function DELETE(request: Request) {
       );
     }
 
+    const existing = await DocumentRecord.findOne({
+      _id: docId,
+      $or: [
+        { senderEmail: requesterEmail },
+        { recipientEmail: requesterEmail },
+      ],
+    }).select("_id isTemplate");
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, message: "Document not found or you don't have permission" },
+        { status: 404 }
+      );
+    }
+
+    if (!existing.isTemplate) {
+      return NextResponse.json(
+        { success: false, message: "Imported documents cannot be deleted" },
+        { status: 403 }
+      );
+    }
+
     const result = await DocumentRecord.deleteOne({
       _id: docId,
+      isTemplate: true,
       $or: [
         { senderEmail: requesterEmail },
         { recipientEmail: requesterEmail },
