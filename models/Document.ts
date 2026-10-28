@@ -29,7 +29,9 @@ export interface IDocumentRecord extends Document {
   lastReminderAt?: Date;
   automaticReminderSentAt?: Date;
   automaticReminderClaimedAt?: Date;
+  lastActivityAt?: Date;
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 const DocumentSchema: Schema<IDocumentRecord> = new Schema(
@@ -66,6 +68,7 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
     lastReminderAt: { type: Date },
     automaticReminderSentAt: { type: Date },
     automaticReminderClaimedAt: { type: Date },
+    lastActivityAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -77,6 +80,8 @@ const DocumentSchema: Schema<IDocumentRecord> = new Schema(
 DocumentSchema.index({ senderEmail: 1, createdAt: -1 });
 DocumentSchema.index({ recipientEmail: 1, createdAt: -1 });
 DocumentSchema.index({ senderEmail: 1, isTemplate: 1, createdAt: -1 });
+DocumentSchema.index({ senderEmail: 1, lastActivityAt: -1, createdAt: -1 });
+DocumentSchema.index({ recipientEmail: 1, lastActivityAt: -1, createdAt: -1 });
 
 const MODEL_NAME = "DocumentRecord";
 if (mongoose.models[MODEL_NAME]) {

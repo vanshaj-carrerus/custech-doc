@@ -57,6 +57,7 @@ export interface RecentDoc {
   reminderCount?: number;
   lastReminderAt?: string;
   automaticReminderSentAt?: string;
+  lastActivityAt?: string;
 }
 
 export interface ActiveDocument {

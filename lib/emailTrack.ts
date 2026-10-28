@@ -20,6 +20,7 @@ export async function recordEmailEvent(docId: string, event: EmailTrackEvent) {
     const $set: Record<string, unknown> = {
       emailOpened: true,
       lastEmailOpenedAt: now,
+      lastActivityAt: now,
     };
     const $min: Record<string, Date> = {
       emailOpenedAt: now,

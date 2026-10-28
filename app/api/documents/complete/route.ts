@@ -20,8 +20,18 @@ export async function POST(request: Request) {
       docRecord = await DocumentRecord.findByIdAndUpdate(
         docId,
         isMobileSubmission
-          ? { status: "Completed", filledFieldsMobile: filledFields || [], placedFieldsMobile: filledFields || [] }
-          : { status: "Completed", filledFields: filledFields || [], placedFields: filledFields || [] },
+          ? {
+              status: "Completed",
+              filledFieldsMobile: filledFields || [],
+              placedFieldsMobile: filledFields || [],
+              lastActivityAt: new Date(),
+            }
+          : {
+              status: "Completed",
+              filledFields: filledFields || [],
+              placedFields: filledFields || [],
+              lastActivityAt: new Date(),
+            },
         { new: true }
       );
     }

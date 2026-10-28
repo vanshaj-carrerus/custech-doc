@@ -108,6 +108,7 @@ export async function POST(request: Request) {
     existing.textEdits = textEdits || existing.textEdits || {};
     existing.status = "Pending Sign";
     existing.sentAt = new Date();
+    existing.lastActivityAt = existing.sentAt;
 
     const docId = existing._id.toString();
     // Save and email don't depend on each other — run them together instead
