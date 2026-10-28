@@ -56,6 +56,7 @@ export async function POST(request: Request) {
 
     const now = new Date();
     doc.lastReminderAt = now;
+    doc.lastActivityAt = now;
     doc.reminderCount = (doc.reminderCount || 0) + 1;
     await doc.save();
 

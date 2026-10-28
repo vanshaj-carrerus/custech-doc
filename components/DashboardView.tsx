@@ -196,8 +196,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         throw new Error(data.message || "Could not send reminder");
       }
 
-      setMongoDocs((current) =>
-        current.map((item) =>
+      setMongoDocs((current) => {
+        const next = current.map((item) =>
           item.id === doc.id
             ? {
                 ...item,
@@ -205,8 +205,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 lastReminderAt: data.lastReminderAt,
               }
             : item
-        )
-      );
+        );
+        const bumped = next.find((item) => item.id === doc.id);
+        const ordered = bumped
+          ? [bumped, ...next.filter((item) => item.id !== doc.id)]
+          : next;
+        try {
+          if (userEmail) {
+            localStorage.setItem(`dochub_document_list_${userEmail}`, JSON.stringify(ordered));
+          }
+        } catch {}
+        return ordered;
+      });
       setReminderNotice({ type: "success", message: data.message });
     } catch (error) {
       setReminderNotice({

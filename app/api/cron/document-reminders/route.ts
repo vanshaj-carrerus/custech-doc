@@ -83,6 +83,7 @@ export async function GET(request: Request) {
             $set: {
               automaticReminderSentAt: new Date(),
               lastReminderAt: new Date(),
+              lastActivityAt: new Date(),
             },
             $inc: { reminderCount: 1 },
             $unset: { automaticReminderClaimedAt: 1 },

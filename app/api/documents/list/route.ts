@@ -4,6 +4,42 @@ import { DocumentRecord } from "@/models/Document";
 
 const MONGO_ID_RE = /^[a-fA-F0-9]{24}$/;
 
+function toMs(value: unknown) {
+  if (!value) return 0;
+  const ms = new Date(value as string | Date).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+function documentActivityMs(doc: {
+  lastActivityAt?: Date;
+  lastEmailOpenedAt?: Date;
+  emailOpenedAt?: Date;
+  emailClickedAt?: Date;
+  emailViewedAt?: Date;
+  lastReminderAt?: Date;
+  automaticReminderSentAt?: Date;
+  sentAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+  status?: string;
+}) {
+  const times = [
+    doc.lastActivityAt,
+    doc.lastEmailOpenedAt,
+    doc.emailOpenedAt,
+    doc.emailClickedAt,
+    doc.emailViewedAt,
+    doc.lastReminderAt,
+    doc.automaticReminderSentAt,
+    doc.sentAt,
+    doc.createdAt,
+  ];
+  // Existing completed docs may not have lastActivityAt; use updatedAt so
+  // signed agreements already sit above untouched imports.
+  if (doc.status === "Completed") times.push(doc.updatedAt);
+  return Math.max(...times.map(toMs), 0);
+}
+
 export async function GET(request: Request) {
   try {
     await connectToDatabase();
@@ -62,7 +98,9 @@ export async function GET(request: Request) {
       // to be missing while the browser waits for it.
       documentsQuery.select("-placedFields -filledFields -placedFieldsMobile -filledFieldsMobile -textEdits");
     }
-    const docs = await documentsQuery.lean();
+    const docs = (await documentsQuery.lean()).sort(
+      (a, b) => documentActivityMs(b) - documentActivityMs(a)
+    );
 
     return NextResponse.json({
       success: true,
